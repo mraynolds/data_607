@@ -1,0 +1,119 @@
+---
+title: "Data 607: Our Aging Congress"
+author: "Maxfield Raynolds"
+date: "2025-02-02"
+output: html_document
+---
+
+```{r setup}
+#|label: load-packages
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+congress_demographics <- read_csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_aging_congress.csv", show_col_types = FALSE)
+```
+
+## Overview: Our Aging Congress
+
+Congress is older than ever, and getting older. This is the topic of 538's article *Congress Today is Older Than It's Ever Been*. The article is a look into the generational demographics of the United States Congress from the 66th to the 118th congress, taking place from 1919 to 2023. The article explores how congress has aged over time in comparison with the rest of the population, and considers how an older congress may prioritize issues relevant to their own demographic. 
+
+To read the original article see <https://fivethirtyeight.com/features/aging-congress-boomers/>.
+
+To access the original data see <https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_aging_congress.csv>
+
+A glimpse at the original data:
+```{r congress_demographics glimpse}
+glimpse(congress_demographics)
+```
+The following code transforms the original data for use during analysis:
+```{r transformation to a subset of the data}
+g_demo <- congress_demographics
+cong_demo <- congress_demographics |>
+  select(congress:bioname,birthday,age_days:generation) |> 
+  relocate(bioname, age_years, congress, state_abbrev, party_code, chamber, generation) |> 
+  rename(party = party_code, age_in_days = age_days, age_in_years = age_years) |> 
+  janitor::clean_names() |>
+  arrange(congress,age_in_years) |> 
+  mutate(party = as.character(party),
+         party = str_replace_all(party, "100","Democrat"),
+         party = str_replace_all(party, "200", "Republican"),
+         party = str_replace_all(party, "328", "Independent"),
+         party = str_replace_all(party, "\\d+", "Other")) |> 
+  separate_wider_delim(
+    bioname,
+    delim = ",",
+    names = c("name_last", "name_first"),
+    too_few = ,
+    too_many = "merge") |> 
+  separate_wider_delim(
+    start_date,
+    delim = "-",
+    names = c("start_year", "start_month", "start_day")) |> 
+  separate_wider_delim(
+    birthday,
+    delim = "-",
+    names = c("birth_year", "birth_month", "birth_day"))
+```
+
+A glimpse at the transformed data:
+```{r cong_demo glimpse}
+glimpse(cong_demo)
+```
+## Preliminary Data Exploration
+
+A plot of the average age by the number of the congress shows the age trending up over time.
+
+```{r average age over time, echo=FALSE}
+avg_age <- 
+  cong_demo |> 
+  group_by(congress) |> 
+  summarize(
+    avg_age = mean(age_in_years)
+  )
+
+ggplot(avg_age, aes(x = congress, y = avg_age)) + 
+  geom_step() + 
+  geom_smooth(method = "loess", formula = "y~x") +
+  labs(
+    title = "Average age by congress",
+    y = "Average age in years",
+    x = "Congress"
+  )
+```
+
+A plot of the average age by congress separated by major party (Democrat or Republican) shows the age trending up over time. 
+
+```{r average age by major party over time, echo=FALSE}
+avg_party <- 
+  cong_demo |> 
+  group_by(congress, party) |>
+  filter(party == "Democrat" | party == "Republican" ) |> 
+  summarize(
+    avg_age = mean(age_in_years),
+    .groups = "drop_last"
+  )
+
+ggplot(avg_party, aes(x = congress, y = avg_age, color = party)) + 
+  geom_step() + 
+  geom_smooth(method = "loess", formula = "y~x") +
+  labs(
+    title = "Average age in congress by major party",
+    subtitle = "(Other parties not included in graph)",
+    x = "Congress",
+    y = "Average age in years"
+  )
+```
+
+Other parties are not plotted here. For a sense of the scale of that redaction, here is a table with a count of the observations by party.
+
+```{r count by party, echo=FALSE}
+cong_demo |> count(party, sort = TRUE)
+```
+
+## Findings & Recommendations
+
+A closer look at the demographics of age by location and party would be an interesting extension of the work in the article. An analysis of the average time spent in congress plotted over time would also provide insight into how members are treating the role: as an act of public service or as a career. Finally, the data would benefit from an update to include the 119th congress. 
+
