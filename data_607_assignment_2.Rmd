@@ -1,0 +1,60 @@
+---
+title: "data_607_assignment_2"
+author: "Maxfield Raynolds"
+date: "2025-02-09"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Connect to the Database
+
+```{r connect to the SQL database}
+library(tidyverse)
+library(RMySQL)
+library(keyring)
+
+# Create a connection to the database
+con <- dbConnect(MySQL(), 
+                 user = key_get("data_606_user_id"), 
+                 password = key_get("data_606_sqldb_pword"), 
+                 dbname = "maxfield.raynolds773", 
+                 host = "cuny607sql.mysql.database.azure.com", 
+                 port = 3306)
+```
+
+## Query the SQL database and create a dataframe
+
+```{r query the sql}
+movie_ratings_raw <- dbGetQuery(con, "SELECT * FROM movie_ratings") 
+
+glimpse(movie_ratings_raw)
+```
+# Replace blanks with NA in movie_reviews_raw and safe to a new dataframe movie_reviews
+
+When the data was collected empty cells were left for any film not seen by a reviewer. The following code replaces the blank strings with "NA" values to indicate that the data is not available. The column is then converted to a numeric (dbl) type. 
+
+Treating the missing data this way ensures that the lack of rating is retained but actively marks that the data is unavailable while allowing the column to be treated as a numeric type which will allow for mathematical and statistical calculations.
+
+```{r replace blanks with NA and convert ratings to numeric}
+movie_ratings <- movie_ratings_raw
+movie_ratings[movie_ratings == ""] <- NA
+
+movie_ratings <- movie_ratings |> 
+  mutate(
+    rating = as.numeric(rating)
+  )
+
+glimpse(movie_ratings)
+```
+# Standardize ratings
+
+Standardized ratings would have been a useful tool. Some reviewers opted to make "half" ratings, between integers. This limits treating the data as integers. While it makes for a potentially more nuanced expression of the individual rating, it might make the data less universally translatable.
+
+One potential data collection approach would be to request a star rating of 1 to 5, but only accept integers and assign a short desciptor phrase to each integer. For example a "5" rating could mean "One of the best films of all time; everyone should see", while a "1" could mean "Terrible; never should have been made". 
+
+# Using the keyring package
+
+To conceal the user login id and the password, the "keyring" package was used. While this is vulnerable on an individual system level, it allows for a quick and easy way to conceal the information in a document that will be distributed. There are individual options for more direct solutions.
