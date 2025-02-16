@@ -1,0 +1,131 @@
+---
+title: "data_607_assignment_3"
+author: "Maxfield Raynolds"
+date: "2025-02-12"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+```
+
+## Normalization
+
+*Provide an example of at least three dataframes in R that demonstrate normalization. The dataframes can contain any data, either real or synthetic. Although normalization is typically done in SQL and relational databases, you are expected to show this example in R, as it is our main work environment in this course.*
+
+To demonstrate normalization, we will load a table scraped from Wikipedia on the judges that have been on the television show Drag Race.
+
+```{r load the practice dataset for normalization}
+drag_race_judges_raw <- read.csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/drag_race_judges_raw.csv")
+```
+
+The table must be atomized and flattened. Additionally the "X" added to the season number is removed and all rows with an empty judge_type are filtered out as this indicates that the person listed was not a judge at that time. Finally, the judges names are split into first and last name. The table should now meet first normal form (1NF).
+```{r}
+drag_race_judges_flat <- drag_race_judges_raw |> 
+  pivot_longer(
+    cols = starts_with("X"),
+    names_to = "season",
+    values_to = "judge_type") |> 
+  mutate(season = str_remove_all(season,"X")) |> 
+  filter(judge_type != "") |> 
+  relocate(season) |> 
+  separate_wider_delim(
+    Judge,
+    delim = " ",
+    names = c("judge_name_last", "judge_name_first"),
+    too_few = ,
+    too_many = "merge")
+```
+
+This data can now be extracted to increase the normalization form. This can be started by creating a table of judge_type. A judge type key will be assigned:
+```{r}
+judge_type <- drag_race_judges_flat |> 
+  select(judge_type) |> 
+  distinct() |> 
+  mutate(judge_type_key = row_number()) |> 
+  relocate(judge_type_key)
+```
+
+The same transformation can be performed for the judges themselves. Separating them out and assigning them a judge key.
+
+```{r}
+judge_list <- drag_race_judges_flat |> 
+  select(judge_name_first,judge_name_last) |> 
+  distinct() |> 
+  mutate(judge_key = row_number()) |> 
+  relocate(judge_key)
+```
+
+Finally, these new tables can be used to create a table that contains all the original table information but transformed to third normal form. This is done by joining the judge_list and judge_type tables to the original table and then selecting the appropriate columns
+
+```{r}
+drag_race_judges <- drag_race_judges_flat |> 
+  left_join(judge_list) |> 
+  left_join(judge_type) |> 
+  select(season, judge_key, judge_type_key)
+```
+While this is a simple example using only three variables these three final tables (drag_race_judges, judge_list, judge_type) should now contain all of the data in the starting table but at third normal form. 
+
+## 2. Character Manipulation
+
+*Using the 173 majors listed in fivethirtyeight.com’s College Majors dataset [https://fivethirtyeight.com/features/the-economic-guide-to-picking-a-college-major/], provide code that identifies the majors that contain either "DATA" or "STATISTICS"*
+
+The below code loads the .csv file from the *538* website.
+
+```{r read and glimpse the college majors data}
+college_majors <- read.csv("https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/college-majors/majors-list.csv")
+
+glimpse(college_majors)
+```
+The code below then creates a new data frame and filters the college major list to only majors that contain the words "Data" and "Statistics". It does this by finding the row indices for majors with those words and then slicing the college_majors data frame to only those rows.
+
+```{r create a dataframe with all majors that have "DATA" or "STATISTICS" in their name}
+data_stat_majors <- college_majors |> 
+  slice(grep("data | statistics", college_majors$Major, ignore.case = TRUE, value = FALSE))
+
+glimpse(data_stat_majors)
+```
+
+An alternative method would be to use filter and str_detect together:
+```{r use filter and str_detect to create a datafame of just majors that have "DATA" or "STATISTICS" in them}
+data_majors_alt <- college_majors |> 
+  filter(str_detect(Major, regex("Data | Statistics", ignore_case = TRUE)))
+```
+
+
+## 3.  Describe, in words, what these expressions will match:
+
+(.)\1\1
+If quoted and escaped correctly this will look for three of the same characters repeated, for example "eee".
+
+"(.)(.)\\2\\1"
+This will look for a four character pattern where the first two characters are repeated in reverse order, for example "abba".
+
+(..)\1
+If quoted and escaped correctly this will look for a four character pattern where any two characters are then immediately repeated, for example "r<emem>ber".
+
+"(.).\\1.\\1"
+This will look for a five character pattern where a captured character is repeated 3 times with any single character between them. For example "<eleve>n".
+
+"(.)(.)(.).*\\3\\2\\1"
+This will look for a three character pattern that is then repeated in reverse order with any number of characters between them. For example the "par" in "<paragrap>h".
+
+## 4. Construct regular expressions to match words that:
+
+Start and end with the same character.
+```{r}
+str_view(words, "^(.).*\\1$")
+```
+
+Contain a repeated pair of letters (e.g. "church" contains "ch" repeated twice.)
+```{r}
+str_view(words, "(..).*\\1")
+```
+
+Contain one letter repeated in at least three places (e.g. "eleven" contains three "e"s.)
+```{r}
+str_view(words, "(.).*\\1.*\\1")
+```
+
