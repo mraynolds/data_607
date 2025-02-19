@@ -1,6 +1,0 @@
-order_number,order_date,customer_number,customer,address,items_ordered
-1000,1/1/2025,8670,Count Chocula,"24 Agrarian Lane, Stockton, CA, 95201","whole milk, fruity pebbles, spoons"
-1001,1/8/2025,5043,Bob Evans,"38 Locust Valley, Deer Flat, ID, 83686","griddle, sausage patties, maple syrup"
-1002,1/17/2025,2237,Jimmy Dean,"1887 Link Way, Des Moines, IA, 50047","eggs, bacon, english muffins"
-1003,1/24/2025,7899,Big Bird,"123 Sesame Street, New York, NY, 10037","bananas, a pink hat"
-1004,1/31/2025,5645,Neil Armstrong,"1969 Moon Landing Avenue, Cincinnati, OH, 45201",moon rocks
