@@ -1,0 +1,235 @@
+---
+title: "data_607_assignment_3"
+author: "Maxfield Raynolds"
+date: "2025-02-12"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+```
+
+## Normalization
+
+*Provide an example of at least three dataframes in R that demonstrate normalization. The dataframes can contain any data, either real or synthetic. Although normalization is typically done in SQL and relational databases, you are expected to show this example in R, as it is our main work environment in this course.*
+
+To demonstrate normalization, we will load a table of fictional sales data.
+
+```{r load the practice dataset for normalization}
+sales_record_raw <- read.csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/sales_record.csv")
+
+glimpse(sales_record_raw)
+```
+# Achieving First Normal Form (1NF)
+
+Currently this data is not normalized. The data is not atomic, there are columns with mixed data types, and repeating groups. To start the data in the sales_record will be atomized. This initial code block will separate the names to first and last, and separate the address into its components: street, city, state, zip code. The items_ordered will be addressed in the next code block.
+
+```{r}
+sales_record <- sales_record_raw |> 
+  separate_wider_delim(
+    customer,
+    delim = " ",
+    names = c("name_first", "name_last"),
+    too_few = ,
+    too_many = "merge"
+  ) |> 
+  separate_wider_delim(
+    address,
+    delim = ", ",
+    names = c("street", "city", "state", "zip_code"),
+    too_few = ,
+    too_many = "merge"
+  ) |> 
+  mutate(order_date = as.Date(order_date, format = '%m/%d/%Y'))
+
+glimpse(sales_record)  
+```
+This data frame still does not meet first normal form (1NF) because the items_ordered contain mixed data types and repeating groups.
+
+To address the the items_ordered a new data frame will be created: sales_items_ordered_1nf. In order to atomize the items_ordered must be pivoted longer and then be separated wider by their data types. Each item contains three pieces of information: an item_number, a quantity, and an item_name. After this transformation and with the order number being the primary key, this table now meets first normal form (1NF).
+```{r}
+sales_items_ordered_1nf <- sales_record |> 
+  separate_wider_delim(
+    items_ordered,
+    delim = ", ",
+    names = c(paste0("item", 1:3)),
+    too_few = "align_start",
+    too_many = "merge"
+  ) |> 
+  pivot_longer(
+    cols = starts_with("item"),
+    values_to = "items_ordered"
+  ) |> 
+  filter(items_ordered != "NA") |> 
+  separate_wider_delim(
+    items_ordered,
+    delim = "-",
+    names = c("item_number","quantity","item_name")
+  ) |>  
+  select(!order_date:name) |> 
+  mutate(quantity = as.integer(quantity))
+
+glimpse(sales_items_ordered_1nf)
+```
+With the sales_items_ordered_1nf now in first normal form, eliminating the items_ordered column from the sales_record_1nf data frame will make that data frame also meet first normal form.
+
+```{r}
+sales_record_1nf <- sales_record |> 
+  select(!items_ordered)
+
+glimpse(sales_record_1nf)
+```
+# Achieving Second Normal Form (2NF)
+
+To achieve second normal form each non-key attribute must depend on the entire primary key.
+
+In the sales_record_1nf data frame the customer information (name, address information) do not rely on the primary key. They rely only on the customer number. To achieve second normal form this data can be moved to another data frame with the customer_number as the primary key. This customer_table_2nf meets second normal form.
+
+```{r}
+customer_table_2nf <- sales_record_1nf |> 
+  select(customer_number:zip_code)
+
+glimpse(customer_table_2nf)
+```
+The sales_record_1nf can now by made into a new data frame, sales_record_2nf, that meets second normal form. This is done by removing the customer name and address information.
+
+```{r}
+sales_record_2nf <- sales_record_1nf |> 
+  select(order_number:customer_number)
+
+glimpse(sales_record_2nf)
+```
+The sales_items_ordered_1nf data frame is already compliant with second normal form, all elements rely on the primary key.
+
+```{r}
+sales_items_ordered_2nf <- sales_items_ordered_1nf
+
+glimpse(sales_items_ordered_2nf)
+```
+# Achieving Third Normal Form (3NF)
+
+Now that all the data frames are in second normal form, they can be assessed and converted to third normal form. In third normal form "every non-key attribute in a table should depend on the key, the whole key and nothing but the key". The value of this is that redundancy is reduced working to eliminate the risk of data anomalies such as update anomalies and reducing dependencies to a minimum. 
+
+Assessing the three data frames so far, sales_record_2nf, sales_items_ordered_2nf, and customer_table_2nf, there are several changes that can be made.
+
+The sales_record_2nf is already appropriate for third normal form as it has no transitive dependencies. The order_date relies only on the order_number and the customer_number relies only on the order_number. Therefore this data frame can be considered in third normal form.
+```{r}
+sales_record_3nf <- sales_record_2nf
+
+glimpse(sales_record_3nf)
+```
+For the sales_items_ordered_2nf, the key is order_number and both item_number and quantity rely on the key, but the item_name has a transitive dependency on the item number. Therefore, to meet third normal form a new data frame must be created of with item_number as the key and the item_name as its dependent. Additionally in the code block below the sales_items_ordered_2nf will be updated with the item_name removed, bringing that data frame into third normal form as well.
+
+```{r}
+item_list_3nf <- sales_items_ordered_2nf |> 
+  select(item_number, item_name)
+
+sales_items_ordered_3nf <- sales_items_ordered_2nf |> 
+  select(!item_name)
+
+glimpse(item_list_3nf)
+glimpse(sales_items_ordered_3nf)
+```
+Finally the customer_table_2nf can be assessed and transformed to third normal form. This is a challenging task as addresses are debated as to how best to normalize. While it would appear that zip code is transitively dependent on state and state is dependent on street, in truth normalization of address is not that simple. Some zip codes span multiple cities or even states. Ultimately, if the goal is to eliminate redundancy and reduce chances for database errors, there is not a definitive standard as to how to normalize addresses and decisions must be made relative to the goals of the database. For the purposes of this exercise, I will view the entire address as transitively dependent on the customer's first and last name and will separate customer_table_2nf into two tables, one with the customer_number and names and one with the customer_number and address info. While there are strong arguments for the components of the address having transitive dependence on each other, for the purposes of this exercise further splitting of the address would be excessive without specific justificaitons.
+
+```{r}
+customer_names_3nf <- customer_table_2nf |> 
+  select(customer_number:name_last)
+
+customer_address_3nf <- customer_table_2nf |> 
+  select(customer_number,street:zip_code)
+
+glimpse(customer_names_3nf)
+glimpse(customer_address_3nf)
+```
+
+
+## 2. Character Manipulation
+
+*Using the 173 majors listed in fivethirtyeight.com’s College Majors dataset [https://fivethirtyeight.com/features/the-economic-guide-to-picking-a-college-major/], provide code that identifies the majors that contain either "DATA" or "STATISTICS"*
+
+The below code loads the .csv file from the *538* website.
+
+```{r read and glimpse the college majors data}
+college_majors <- read.csv("https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/college-majors/majors-list.csv") |> 
+  rename(fod1p = "FOD1P",
+         major = "Major",
+         major_category = "Major_Category") |> 
+  mutate(major = str_to_upper(major),
+         major_category = str_to_upper(major_category))
+
+glimpse(college_majors)
+```
+The code below then creates a new data frame and filters the college major list to only majors that contain the words "Data" and "Statistics". It does this by finding the row indices for majors with those words and then slicing the college_majors data frame to only those rows.
+
+```{r create a dataframe with all majors that have "DATA" or "STATISTICS" in their name}
+data_stat_majors <- college_majors |> 
+   slice(grep("DATA|STATISTICS", college_majors$major, ignore.case = TRUE, value = FALSE))
+
+
+glimpse(data_stat_majors)
+```
+An alternative method would be to use filter and str_detect together:
+```{r use filter and str_detect to create a datafame of just majors that have "DATA" or "STATISTICS" in them}
+data_majors_alt <- college_majors |> 
+  filter(str_detect(major, regex("DATA|STATISTICS", ignore_case = TRUE)))
+```
+
+
+## 3.  Describe, in words, what these expressions will match:
+```{r load the dataset "words" to demo the regular expressions}
+data(words)
+```
+
+(.)\1\1
+As written, this will yield an error, if quoted and escaped this will look for three of the same characters repeated, for example "777".
+```{r}
+w <- c(677789, 54321, 778899111, 23233312)
+str_view(w, "(.)\\1\\1")
+```
+
+"(.)(.)\\2\\1"
+This will look for a four character pattern where the first two characters are repeated in reverse order, for example "abba".
+```{r}
+str_view(words,"(.)(.)\\2\\1")
+```
+
+(..)\1
+As written this wil yield an error. If entered into quotes and escaped, this will look for a four character pattern where any two characters are then immediately repeated, for example "r<emem>ber".
+```{r}
+str_view(words,"(..)\\1")
+```
+
+"(.).\\1.\\1"
+This will look for a five character pattern where a captured character is repeated 3 times with any single character between them. For example "<eleve>n".
+```{r}
+str_view(words,"(.).\\1.\\1")
+```
+
+"(.)(.)(.).*\\3\\2\\1"
+This will look for a three character pattern that is then repeated in reverse order with any number of characters between them. For example the "par" in "<paragrap>h".
+```{r}
+str_view(words,"(.)(.)(.).*\\3\\2\\1")
+```
+
+
+## 4. Construct regular expressions to match words that:
+
+Start and end with the same character.
+```{r}
+str_view(words, "^(.).*\\1$")
+```
+
+Contain a repeated pair of letters (e.g. "church" contains "ch" repeated twice.)
+```{r}
+str_view(words, "(..).*\\1")
+```
+
+Contain one letter repeated in at least three places (e.g. "eleven" contains three "e"s.)
+```{r}
+str_view(words, "(.).*\\1.*\\1")
+```
+
