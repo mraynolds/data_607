@@ -1,0 +1,216 @@
+---
+title: "data_607_assignment_4"
+author: "Maxfield Raynolds"
+date: "2025-02-21"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(janitor)
+```
+
+# Tidying Data
+
+## Retrieve the data
+
+The code block below will import the data from a .csv file stored in github. As the data is being imported there is also a setting that will add an NA to all blank or empty values in the data. Executing this on import will simplify the data tidying process.
+
+```{r load the dataset}
+flight_data_raw <- read.csv("http://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_607_assignment_4.csv", na = "")
+
+head(flight_data_raw)
+```
+The table above shows that the data class types are all appropriate on import. 
+
+It also shows the data is not tidy. Some of the things that are not tidy: \
+  - The data set has used a variable, the city, as column headers \
+  - There are multiple observations for every row \
+  - Columns without names were assigned an X or an X.1 \
+  - Some rows have missing fixed variables: the name of the airline \
+  - On Time and Delayed can be column headers \
+  
+Additionally:\
+  - Blank values had an NA applied to the column \
+  - Column names with spaces had a period inserted where the space had been \
+
+The tidying process will correct the above issues. Below is a step by step process for tidying this data:
+
+## Rename columns with missing names
+
+To start the columns without a name will be renamed as "airline" and "flight_status" for the status of whether the flight was "on time" or "delayed".
+
+```{r rename columns with missing names}
+flight_data <- flight_data_raw |> 
+  rename("airline" = X, "flight_status" = X.1)
+
+head(flight_data)
+```
+
+## Remove row that contains no data
+
+The next step is to remove the row that was empty from the original data set. This is done by filtering the row without any values out of the dataframe.
+
+```{r remove row that contains no data}
+flight_data <- flight_data |> 
+  filter(flight_status != '')
+
+head(flight_data)
+```
+
+## Fill in missing airline data
+
+The next step is to fill in the missing airline data. The original data set was written without filling in the airline for each row, implying that the airline neeaded to be carried forward to tidy the data. This is an example of last observation carried forward (locf), the missing data can be filled in using fill().
+
+```{r fill in missing airline data}
+flight_data <- flight_data |> 
+  fill(airline)
+
+head(flight_data)
+```
+
+## Pivot the data longer
+
+In order to create tidy data, the variable of city needs to be moved to a column and given a column header named "city". This is done by pivoting the data longer. All of the values below the city will be assigned to a column called "count". This code block also retains a version of the pivoted longer data. In the next section, the data will be pivoted wider but retaining a version of the longer data will be useful for analysis.
+
+```{r pivot the data longer}
+flight_data <- flight_data |> 
+  pivot_longer(
+    cols = !(airline:flight_status),
+    names_to = "city",
+    values_to = "count"
+  ) |> arrange(desc(count))
+
+flight_data_long <- flight_data
+
+head(flight_data)
+```
+## Now Pivot Wider
+
+The pivot longer does not fix all the messiness. "On time" and "delayed" are variable names stored in a column. Pivoting the flight_status column wider will make "on time" and "delayed" column headers.
+
+```{r pivot wider}
+flight_data <- flight_data |> 
+  pivot_wider(
+     names_from = flight_status,
+    values_from = count
+  )
+```
+
+## A little cleanup
+
+The data is now tidy but could use a little cleanup. The following code replaces the "." in the city names with a space, and renames the "on time" column to "on_time" to meet the column naming convention.
+
+```{r}
+flight_data <- flight_data |> 
+  mutate(city = str_replace_all(city, "\\.", " "))
+
+flight_data_long <- flight_data_long |> 
+  mutate(city = str_replace_all(city, "\\.", " "))
+
+colnames(flight_data) <- gsub(" ","_", colnames(flight_data))
+
+head(flight_data)
+```
+## Tidy Data
+
+The data is now tidy. Each variable is in a column and each row is an observation. The data is cleaned up and missing values have been addressed.
+
+## Totals
+
+In the code block below a "total_flights" column will be added to the data set to make for easier data analysis. This column will be the combination of the on_time and delayed arrivals by each airline and each airport.
+
+```{r}
+flight_data <- flight_data |> 
+  mutate(total = on_time + delayed)
+```
+
+
+# Data Analysis
+
+## Consider the airline
+
+Flights by airline show that AM WEST has almost twice as many flights as ALASKA.
+
+```{r Totals by Airline}
+flight_data |> 
+  group_by(airline) |> 
+  summarize(on_time = sum(on_time), delayed = sum(delayed), total = sum(total)) |> 
+  adorn_totals("row")
+```
+```{r}
+ggplot(flight_data_long, aes(x = airline, y = count, fill = flight_status)) + 
+  geom_bar(position = "stack", stat = "identity")
+```
+
+
+## Proportion
+
+The difference in the quantity of flights is significant, making direct comparison difficult. When considered as a proportion of flights, a direct comparison is possible. When considering the below chart, despite AM WEST having nearly twice as many flights as ALASKA, AM WEST has a lower rate of arrival delays than ALASKA. That being said, the proportions are similar. 
+
+```{r table of on time vs delayed arrival by airline}
+flight_data |> 
+  group_by(airline) |> 
+  summarize(on_time = sum(on_time) / sum(total), delayed = sum(delayed) / sum(total), total = sum(total) / sum(total))
+```
+
+
+```{r plot of on time and delayed arrivals by proportion by airline}
+ggplot(flight_data_long, aes(x = airline, y = count, fill = flight_status)) + 
+  geom_bar(position = "fill", stat = "identity")
+```
+
+## Consider the City
+
+Looking at the actual data for on time and delayed arrivals is equally challenging to draw conclusions from as the total flights are so varied. Phoenix is clearly handling the majority of all arrival flights in this dataset.
+
+```{r totals by city}
+flight_data |> 
+  group_by(city) |> 
+  summarize(on_time = sum(on_time), delayed = sum(delayed), total = sum(total)) |> 
+  arrange(desc(total)) |> 
+  adorn_totals("row")
+```
+
+
+```{r plot of totals by city}
+ggplot(flight_data_long, aes(x = reorder(city, -count), y = count, fill = flight_status)) + 
+  geom_bar(position = "stack", stat = "identity")
+```
+
+## Proportion by city
+
+Again, it is useful to consider the on time and delayed arrivals by proportion but this time by city. The table and chart below indicate that San Francisco has the most delays while Phoenix has the fewest. Phoenix is particularly notable as they have the most flights arriving while still having the fewest delayed arrivals. While San Francisco has the most delays as a proportion of their arrivals.
+```{r}
+flight_data |> 
+  group_by(city) |> 
+  summarize(on_time = sum(on_time) / sum(total), delayed = sum(delayed) / sum(total), total = sum(total) / sum(total))
+```
+
+```{r}
+ggplot(flight_data_long, aes(x = city, y = count, fill = flight_status)) + 
+  geom_bar(position = "fill", stat = "identity")
+```
+
+## Consider by city and airline
+
+The plot below shows the count of each airlines on time and delayed arrivals separated by city. Phoenix is clearly an important destination for AM WEST, perhaps their hub, while Seattle is the equivalent for ALASKA. This also helps illustrate how important Phoenix arrivals from AM WEST are to the overall data set.
+```{r}
+ggplot(flight_data_long, aes(x = airline, y = count, fill = flight_status)) + 
+  geom_col(position = "stack") + facet_wrap(~ city)
+```
+
+To break down the contrast further between on time and delayed arrivals the city and the airline can be considered at the same time. The plot below shows side by side comparisons of each city's arrivals by airline by proportion. 
+
+An interesting observation occurs here. Despite having a greater proportion of on time arrivals overall, AM WEST has a lower on time arrival rate by proportion than ALASA in every city. To a large extent this can be attributed to the significantly larger counts of flight status that occur in Phoenix over every other destination.
+
+```{r}
+ggplot(flight_data_long, aes(x = airline, y = count, fill = flight_status)) + 
+  geom_bar(position = "fill", stat = "identity") + facet_wrap(~ city)
+```
+
+
