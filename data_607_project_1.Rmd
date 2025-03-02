@@ -1,0 +1,171 @@
+---
+title: "data_607_project_1"
+author: "Maxfield Raynolds"
+date: "2025-03-01"
+output: html_document
+---
+# Project 1 
+
+### The Project
+
+This project will import a chess tournament crosstable, transform and tidy the data, and produce a .csv file with summary information from the original crosstable. The information to be returned is the player names, player states, total number of points, player pre-ratings, and average pre-chess rating of the player's opponents.
+
+## Load packages
+
+The following code loads the tidyverse package.
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Import the data
+
+The data will be imported from github using read_delim to separate all the data by a vertical bar ("|"). Rows of dashes are removed by labeling them as comments. White space is trimmed, and the first three rows are skipped. Then a final empty column is dropped from the data frame.
+
+```{r import data}
+tournament_info <-
+  read_delim("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/tournamentinfo.txt", delim = "|", comment = "--", trim_ws = TRUE, skip = 3, col_names = FALSE, show_col_types = FALSE) |> 
+  select(!X11)
+
+head(tournament_info)
+```
+
+## Make observations a single row
+
+The data is now laid out where each player's data is laid out over two rows, one immediately following the other. The following code separates alternating lines of code, then combines them into single rows, so that each player's data is contained on a single row. This change arranges the data so that columns now contain the same type of data. The code then renames the columns  to better communicate what the data is that they contain.
+
+```{r seperate the data rows and combine them into single rows}
+players <- tournament_info |> 
+  filter(str_detect(tournament_info$X1, "\\d"))
+
+states <- tournament_info |> 
+  filter(str_detect(tournament_info$X1, "\\D"))
+
+tournament <- merge(players, states, by = "row.names", sort = TRUE) |> 
+  mutate(Row.names = as.numeric(Row.names)) |> 
+  arrange(Row.names) |> 
+  select(!X1.x) |> 
+  rename(player_number = Row.names,
+         player_name = X2.x,
+         total_pts = X3.x,
+         round_1 = X4.x,
+         round_2 = X5.x,
+         round_3 = X6.x,
+         round_4 = X7.x,
+         round_5 = X8.x,
+         round_6 = X9.x,
+         round_7 = X10.x,
+         state = X1.y,
+         uscf_ID_rating = X2.y,
+         norm_performance = X3.y,
+         color_1 = X4.y,
+         color_2 = X5.y,
+         color_3 = X6.y,
+         color_4 = X7.y,
+         color_5 = X8.y,
+         color_6 = X9.y,
+         color_7 = X10.y) |> 
+  relocate(state:uscf_ID_rating, .after = player_name)
+
+head(tournament)
+```
+
+## Make the Data Tidy
+
+The code block below makes the data tidy. Several columns still contain multiple variables. Each column that contains multiple variables in each cell is separated wider. Once each cell contains a single variable or observation, the data is pivoted longer to tidy the data. As the data had been structured, there were multiple repeated columns. This would make adding additional data to the table challenging and does not meet Hadley Wickham's standard for "tidy". The pivot longer solves this issue.
+
+Some of the column data types are changed, and then the order of columns is changed to make the fixed variables contiguous.
+
+After running the below code, the data is now tidy and ready for analysis.
+
+```{r seperate all cells with multiple variables in them, rename and reorganize}
+tournament <- tournament |> 
+  separate_wider_delim(uscf_ID_rating, " / R: ", names = c("uscf_id", "rating")) |> 
+  separate_wider_delim(rating, "->", names = c("pre_tournament_rating", "post_tournament_rating")) |> 
+  separate_wider_delim(pre_tournament_rating, "P", names = c("pre_tourn_rating","pre_tourn_provisional_games"), too_few = "align_start") |> 
+  separate_wider_delim(post_tournament_rating, "P", names = c("post_tourn_rating","post_tourn_provisional_games"), too_few = "align_start") |>
+  separate_wider_regex(round_1, patterns = c(result_1 = "\\w", "\\s+", opponent_1 = "\\d+"), too_few = "align_start") |> 
+  separate_wider_regex(round_2, patterns = c(result_2 = "\\w", "\\s+", opponent_2 = "\\d+"), too_few = "align_start") |>
+  separate_wider_regex(round_3, patterns = c(result_3 = "\\w", "\\s+", opponent_3 = "\\d+"), too_few = "align_start") |>
+  separate_wider_regex(round_4, patterns = c(result_4 = "\\w", "\\s+", opponent_4 = "\\d+"), too_few = "align_start") |>
+  separate_wider_regex(round_5, patterns = c(result_5 = "\\w", "\\s+", opponent_5 = "\\d+"), too_few = "align_start") |>
+  separate_wider_regex(round_6, patterns = c(result_6 = "\\w", "\\s+", opponent_6 = "\\d+"), too_few = "align_start") |>
+  separate_wider_regex(round_7, patterns = c(result_7 = "\\w", "\\s+", opponent_7 = "\\d+"), too_few = "align_start") |>
+  pivot_longer(
+    cols = starts_with(c("result", "opponent", "color")),
+    names_to = c(".value", "round"),
+    names_sep = "_",
+    values_drop_na = FALSE
+  ) |> 
+  mutate(
+    pre_tourn_rating = as.numeric(pre_tourn_rating),
+    pre_tourn_provisional_games = as.numeric(pre_tourn_provisional_games),
+    post_tourn_rating = as.numeric(post_tourn_rating),
+    post_tourn_provisional_games = as.numeric(post_tourn_provisional_games),
+    total_pts = as.numeric(total_pts),
+    opponent = as.numeric(opponent)
+  ) |> 
+  relocate(norm_performance, .after = total_pts) |> 
+  relocate(pre_tourn_provisional_games, .after = post_tourn_rating)
+
+tournament <- tournament |> mutate(norm_performance = str_remove_all(tournament$norm_performance, "N:"))
+
+head(tournament)
+```
+
+## A Preliminary Summary
+
+From the tidy data frame, the majority of the required summary data is extracted and saved to a new data frame. This data frame includes player numbers, player names, player states, and pre-tournament player ratings. The only thing missing is the average of each player’s opponents’ pre-tournament ratings.
+
+```{r make a data frame with summary information for each player}
+player_summary <- tournament |>
+  select(player_number, player_name, state, total_pts, pre_tourn_rating) |> 
+  distinct(player_number, .keep_all = TRUE)
+
+head(player_summary)
+```
+
+## The Opponent Averages
+
+The following code block creates two new data frames. One data frame has basic information about each player including their number, name, pre-tournament rating, and opponent number. 
+
+The second data frame is a list of player numbers and their pre-tournament rating.
+
+The code block then joins the two data frames by pairing the opponent numbers from the first data frame with the pre-tournament ratings from the second frame.
+
+The data is then grouped by player and the opponent ratings are averaged.
+
+Finally, the list of averages is joined to the player summary data that was created in the previous code block, and the player number column is dropped from the data frame.
+
+The data summary is now complete.
+
+```{r create a data frame to calculate averages}
+averages <- tournament |> 
+  select(player_number, player_name, player_pre_tourn_rating = pre_tourn_rating, opponent) |> 
+  filter(opponent != is.na(NA))
+
+ratings <- tournament |> 
+  select(opponent_number = player_number, opponent_pre_tourn_rating = pre_tourn_rating) |> 
+  distinct()
+
+combined_rating <- left_join(averages, ratings, by = join_by(opponent == opponent_number))
+
+avg_rating <- combined_rating |> 
+  group_by(player_number) |> 
+  summarize(avg_opponent_rating = round(mean(opponent_pre_tourn_rating)))
+
+player_summary_final <- left_join(player_summary, avg_rating, by = join_by(player_number == player_number)) |> 
+  select(!player_number)
+
+head(player_summary_final)
+```
+
+## Export to .csv
+
+This code block will export the player summary final to a .csv file for future use.
+
+```{r produce a csv file of the summary}
+write_csv(player_summary_final, "player_summary_final.csv")
+```
+
