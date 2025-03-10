@@ -1,0 +1,275 @@
+---
+title: "data_607_project_3_dataset_3"
+author: "Maxfield Raynolds"
+date: "2025-03-08"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages}
+library(tidyverse)
+```
+
+# Project 2 - Dataset 3
+
+## Tidying
+
+### Load the Dataset
+
+The following code loads the data set into r and fills NA into empty cells.
+
+```{r load the dataset}
+data3 <- read.csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_607_project_2_dataset_3.csv", na = c("","NA"))
+
+glimpse(data3)
+```
+
+The code has several issues that keep it from being tidy, and even more issues that keep it from being clean.
+
+To tidy the following transformations will be executed:
+- Separate duration into a start and end date and create an actual duration column
+- Separate out environmental metrics (wind speed and pressure) so that each column only has one data type and only contains numeric data
+- Separate and convert monetary damage into separate columns for notes and numeric values, while eliminating the text based values
+- Pivot long areas affected so they can be evaluated individually
+
+Most columns also need some additional cleaning.
+
+The code block below begins separating out the date data. The date data is mostly a range of two dates, with very inconsistent formatting. The code below separates the original duration column into individual components for the start month, year, day and the end month, year, day, and a footnote column. The original dataset did not contain the actual footnote.
+
+```{r drop X column, separate date information}
+data3 <- data3 |> 
+  select(!X) |> 
+  separate_wider_regex(
+    Duration,
+    patterns = c(
+     start_month = "[A-Za-z]+",
+     "\\s*",
+     start_day = "[0-9]+",
+     ",*",
+     "\\s*",
+     start_year = "[0-9]*",
+     "\\W*",
+     end_month = "[A-Za-z]*",
+     "\\W*",
+     end_day = "[0-9]*",
+     "\\W*",
+     end_year = "[0-9]*",
+     "\\s*",
+     date_footnote = ".*"
+    )
+  )
+
+glimpse(data3)
+```
+The following code copies the year into the start year from the end year columns wherever there is no start year. It also copies the start month into the end month column anywhere that an end month does not already exist.
+
+```{r copy empty date data}
+data3 <- data3 |> mutate(
+  start_year = if_else(start_year == "", end_year, start_year),
+  end_month = if_else(end_month == "", start_month, end_month)
+)
+
+glimpse(data3)
+```
+
+The following code block converts the months to their numeric equivalent and then forms individual columns that contain the full start and date, as well as the difference between the two so that there is a duration column.
+
+```{r create start and end dates, and duration}
+data3 <- data3 |>
+  mutate(
+    start_month = match(start_month, month.name),
+    start_date = make_date(start_year, start_month, start_day),
+    end_month = match(end_month, month.name),
+    end_date = make_date(end_year, end_month, end_day),
+    duration = as.duration(end_date - start_date)
+    ) |> 
+  select(!start_month:end_year) |> 
+  relocate(start_date:duration, .after = Name)
+
+glimpse(data3)
+```
+The following code separates wide wind speed and pressure data so each column only contains a single numeric value.
+
+```{r separate out wind_speed and pressure data}
+data3 <- data3 |> separate_wider_regex(Wind.speed,
+                           patterns = c(
+                             wind_speed_mph = "[0-9]+",
+                             "\\D+",
+                             wind_speed_km_per_hr = "[0-9]+",
+                             "\\D+")) |> 
+    mutate(Pressure = str_remove_all(Pressure,",")) |> 
+  separate_wider_regex(Pressure,
+                       patterns = c(
+                         pressure_hPa = "[0-9]+",
+                         "\\D+",
+                         pressure_inHg = "[0-9+\\.0-9]+",
+                         "\\D+"), too_few = "align_start")
+```
+
+The following code block cleans up and converts the damages information into numeric values. The formatting is very inconsistent as loaded. This code makes it consistent so that it can be used in data analysis.
+
+```{r convert money words to numbers}
+data3 <- data3 |> 
+  separate_wider_regex(Damage,
+                       patterns = c(damage_notes = "^\\[.*|>*",
+                                    "\\$?",
+                                    damage_amount_dollars = "\\$?\\s*\\d*\\.*\\d*",
+                                    "\\s*",
+                                    damage_modifier = "[A-Za-z]*"
+                                    ), too_few = "align_start") |> 
+  mutate(
+    damage_amount_dollars = as.numeric(damage_amount_dollars),
+    damage_amount_dollars = if_else(damage_modifier == "thousand", damage_amount_dollars*1000, damage_amount_dollars),
+    damage_amount_dollars = if_else(damage_modifier == "million", damage_amount_dollars*1000000, damage_amount_dollars),
+    damage_amount_dollars = if_else(damage_modifier == "billion", damage_amount_dollars*1000000000, damage_amount_dollars),
+    damage_notes = if_else(damage_modifier == "Unknown", "Unknown", damage_notes),
+    damage_notes = if_else(damage_notes == ">", "Damage greater than damage_amount", damage_notes)
+  )
+```
+The following code separates longer the areas affected column. This is necessary because the areas affected consist of multiple inconsistent variables. This is necessary but it also needs to be something that is clear and aware of during data analysis, because it duplicates deaths and monetary damages, it has the potential, during analysis to skew the numbers.  As a result its necessary to separate the data into two separate data frames so as to prevent this potential duplication of data.
+
+```{r}
+data_damage <- data3 |> 
+  select(!Areas.affected)
+```
+
+
+```{r pivot areas affected longer}
+data3 <- data3 |> 
+  select(!Deaths :damage_modifier) |> 
+  separate_longer_delim(
+   Areas.affected, delim = regex("\\w+[a-z][A-Z]\\w+|, | and")
+  ) |> 
+  rename(area_affected = Areas.affected)
+```
+
+The following code attempts to clean and transform the areas affected data so that it is consistent. In a true analysis it would be important to explore and study and define more about how the areas affected are structured and what each area actually means. The data, as is, is very inconsistent. It uses different terms for what sound like the same region. 
+
+```{r clean area_affected to attempt to create uniform}
+data3 <- data3 |> 
+  mutate(
+    area_affected = str_remove_all(area_affected, "^\\s|\\s$"),
+   area_affected = str_replace_all(area_affected, "Caicos$", "Caicos Islands"),
+   area_affected = str_replace_all(area_affected, "Atlantic Canada", "Canada, Atlantic"),
+   area_affected = str_replace_all(area_affected, "Central Mexico", "Mexico, Central"),
+   area_affected = str_replace_all(area_affected, "Canadian", "Canada,"),
+   area_affected = str_replace_all(area_affected, "Cape Verde$", "Cape Verde Islands"),
+   area_affected = str_replace_all(area_affected, "Cayman $", "Cayman Islands"),
+   area_affected = str_replace_all(area_affected, "Central United States|central United States", "United States, Central"),
+   area_affected = str_replace_all(area_affected, "East Coast of the United States|Eastern Coast of the United States|Eastern United States|United States East Coast|United States East coast", "United States, Eastern"),
+   area_affected = str_replace_all(area_affected, "East Coast of the United States|Eastern Coast of the United States|Eastern United States|eastern United States", "United States, Eastern"),
+   area_affected = str_replace_all(area_affected, "Eastern Canada", "Canada, Eastern"),
+   area_affected = str_replace_all(area_affected, "Greater Antilles", "Antilles, Greater"),
+   area_affected = str_replace_all(area_affected, "Gulf Coast of the United States|United States Gulf Coast", "United States, Gulf Coast"),
+   area_affected = str_replace_all(area_affected, "Gulf of Mexico", "Mexico, Gulf"),
+   area_affected = str_replace_all(area_affected, "Leeward$", "Antilles, Leeward"),
+   area_affected = str_replace_all(area_affected, "Great Britain", "United Kingdom"),
+   area_affected = str_replace_all(area_affected, "Leeward Antilles|Leeward Islands", "Antilles, Leeward"),
+   area_affected = str_replace_all(area_affected, "Leeward Antilles|Leeward Islands|Lesser Antilles", "Antilles, Leeward"),
+   area_affected = str_replace_all(area_affected, "Mid-Atlantic|Mid-Atlantic States|Mid-Atlantic states", "United States, Mid-Atlantic"),
+   area_affected = str_replace_all(area_affected, "Midwestern Unites States", "United States, Midwestern"),
+   area_affected = str_replace_all(area_affected, "Northeastern Caribbean", "Caribbean, Northeastern"),
+   area_affected = str_replace_all(area_affected, "Northeastern United States", "United States, Northeastern"),
+   area_affected = str_replace_all(area_affected, "South Florida", "Florida, South"),
+   area_affected = str_replace_all(area_affected, "South Texas|Southern Texas", "Texas, South"),
+   area_affected = str_replace_all(area_affected, "South United States, Central", "United States, South Central"),
+   area_affected = str_replace_all(area_affected, "Southeast Mexico", "Mexico, Southeast"),
+   area_affected = str_replace_all(area_affected, "Southeastern United States", "Unite Sates, Southeastern"),
+   area_affected = str_replace_all(area_affected, "Southern Portugal", "Portugal, Southern"),
+   area_affected = str_replace_all(area_affected, "Southwestern Florida", "Florida, Southwestern"),
+   area_affected = str_replace_all(area_affected, "Southwestern Quebec", "Quebec, Southwestern"),
+   area_affected = str_replace_all(area_affected, "Northeastern Caribbean", "Caribbean, Northeastern"),
+   area_affected = str_replace_all(area_affected, "The Bahamas", "Bahamas"),
+   area_affected = str_replace_all(area_affected, "The Caribbean", "Caribbean"),
+   area_affected = str_replace_all(area_affected, "The Carolinas", "Carolinas"),
+   area_affected = str_replace_all(area_affected, "Northeastern Caribbean", "Caribbean, Northeastern"),
+   area_affected = str_replace_all(area_affected, "West Africa", "Africa, West"),
+   area_affected = str_replace_all(area_affected, "Western Europe", "Europe, Western"),
+   area_affected = str_replace_all(area_affected, "Western Mexico", "Mexico, Western"),
+   area_affected = str_replace_all(area_affected, "^Yucatá.*", "Yucatán Peninsula"),
+   area_affected = str_replace_all(area_affected, "western Cuba", "Cuba, Western")
+  )
+```
+
+The following code replaces "Unknown" deaths with NA. In order to provide more consistency during analysis and not have any non-numeric data within the column.
+
+```{r replace unknown deaths with NA}
+data_damage <- data_damage |> 
+  mutate(
+  Deaths = na_if(Deaths, "Unknown")
+    )
+```
+
+The following code block does some additional cleanup to both data frames.It renames column names and eliminates a helper column.
+
+```{r column rename and selection}
+data_damage <- data_damage |> 
+  relocate(damage_notes, .after = damage_amount_dollars) |> 
+  mutate(
+    Deaths = as.numeric(Deaths),
+    wind_speed_mph = as.numeric(wind_speed_mph),
+    wind_speed_km_per_hr = as.numeric(wind_speed_km_per_hr),
+    pressure_hPa = as.numeric(pressure_hPa),
+    pressure_inHg = as.numeric(pressure_inHg)
+  ) |> 
+  select(!damage_modifier) |>
+  rename(deaths = Deaths, ref = REf, name = Name)
+
+data3 <- data3 |> 
+  mutate(
+    wind_speed_mph = as.numeric(wind_speed_mph),
+    wind_speed_km_per_hr = as.numeric(wind_speed_km_per_hr),
+    pressure_hPa = as.numeric(pressure_hPa),
+    pressure_inHg = as.numeric(pressure_inHg)
+  ) |> 
+  rename(ref = REf, name = Name)
+
+glimpse(data3)
+glimpse(data_damage)
+```
+
+## Analysis
+
+Below is a cursory analysis of the now tidy data.
+
+The following code sorts and displays, then charts the Hurricanes by the ones that cost the most human life. 
+
+```{r top 10 damage}
+data_deaths <- data_damage |> 
+  arrange(desc(deaths)) |>
+  distinct(name,.keep_all = TRUE) |> 
+  slice_head(n = 10)
+```
+
+```{r plot deaths}
+ggplot(data_deaths, aes(x = reorder(name, -deaths),y = deaths)) + geom_col()
+```
+The following code displays then plots the top ten hurricanes by the estimated cost of damage for all huricanes that had data.
+
+```{r top 10 cost}
+data_cost <- data_damage |> 
+  arrange(desc(damage_amount_dollars)) |>
+  distinct(name,.keep_all = TRUE) |> 
+  slice_head(n = 10)
+```
+
+```{r plot cost}
+ggplot(data_cost, aes(x = reorder(name, -damage_amount_dollars), y = damage_amount_dollars)) + geom_col()
+```
+
+The following code displays then plots the top ten areas that have the most hurricanes in the dataset
+
+```{r top 10 areas with most hurricanes}
+data_areas_affected <- data3 |> 
+  filter(area_affected != "None") |>
+  count(area_affected, sort = TRUE) |>
+  top_n(10) |> 
+  print()
+```
+
+```{r plot area affected}
+ggplot(data_areas_affected, aes(x = reorder(area_affected, -n), y = n)) + geom_col()
+```
