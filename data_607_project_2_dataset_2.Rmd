@@ -1,0 +1,143 @@
+---
+title: "data_607_project_2_dataset_2"
+author: "Maxfield Raynolds"
+date: "2025-03-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages}
+library(tidyverse)
+```
+
+# Project 2 - Dataset 2
+
+## Tidying
+
+### Load the Dataset
+```{r load the dataset}
+data2 <- read.csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_607_project_2_dataset_2.csv")
+
+glimpse(data2)
+```
+
+### Pivot data longer
+
+The dataset appears to be list of store ids, their location, their country, and a monetary amount listed by month in a wide format. 
+
+To start the data will need to be pivoted longer in order take the months out of the column headers and place them into rows.
+
+The following code pivots the data longer into column for the months and a column named "dollars", since it is not clear what the monetary data represents and the only indicator is a dollar symbol. 
+
+A note on the money: In reality, this would require an investigation into the dataset and the domain knowledge of what the money represents. Furthermore, all columns have dollar signs, but there are several countries listed, including the US and Canada which both use the dollars but different dollars. There are several more countries that use currencies other than the dollar, yet the values listed in their rows are as dollars. For the purposes of this project, we will use the assumption that the dataset is listed exclusively in US dollars since the source data does not specify.
+
+```{r pivot longer and separate by month}
+data2 <- data2 |> 
+  pivot_longer(
+    cols = !(Store.ID:Country),
+    names_to = "month",
+    values_to = "dollars"
+  )
+
+glimpse(data2)
+```
+
+### Make a factor for months
+
+The following code makes an ordinal factor for the months.
+
+```{r factor for months}
+month_levels <- c(
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+)
+```
+
+### Clean up the data frame
+
+The following code cleans up the data frame. It:
+- renames columns
+- changes character classes of month to factor, and dollars to a double and removes the currency symbol
+
+```{r clean the data}
+data2 <- data2 |> 
+  rename(
+    store_id = Store.ID,
+    store = Store,
+    country = Country
+  ) |>
+  mutate(
+    month = factor(month, levels = month_levels),
+    dollars = parse_number(dollars),
+    store_id = as.character(store_id)
+  )
+
+glimpse(data2)
+```
+
+### Tidy data
+
+The data frame is now clean and tidy. The data is significantly longer as a result but now it is in a form that will allow it to be analyzed easily and consistently.
+
+## Analysis
+
+The code below totals all of the monetary data by store and plots and sorts it in descending order. It seems store 3 in Laguardia in the US has the highest monetary information while Chelsea in the UK has the lowest.
+
+```{r some data by store}
+total_dollars_by_store <- data2 |> 
+  group_by(store_id, store, country) |> 
+  summarise(total_dollars = sum(dollars)) |> 
+  arrange(desc(total_dollars)) |> 
+  print()
+```
+```{r bar plot of total dollars by store}
+ggplot(total_dollars_by_store, aes(x = reorder(store_id, -total_dollars), y = total_dollars)) +
+  geom_col()
+```
+
+The following code adds up the monetary data by country and sorts it in descending order. It also calculates the average dollars per store by country. From this data it is clear that the US has the highest total dollars. This is to be expected as it has the most stores. However it also has the higher average dollars per store.
+
+A notable insight from this data is that while France has only one store, it has the third highest total dollars and the second highest average dollars per store.
+
+```{r some data by country}
+total_dollars_by_country <- data2 |> 
+  group_by(country) |> 
+  summarise(
+    store_per_country = n()/11,
+    total_dollars = sum(dollars),
+    avg_dollars_per_store = (total_dollars / store_per_country)
+    ) |> 
+  arrange(desc(total_dollars)
+  ) |> 
+  print()
+```
+
+```{r bar plot of total dollars by country}
+ggplot(total_dollars_by_country, aes(x = reorder(country, -total_dollars), y = total_dollars)) +
+  geom_col()
+```
+
+```{r bar plot of avg dollars by country}
+ggplot(total_dollars_by_country, aes(x = reorder(country, -avg_dollars_per_store), y = avg_dollars_per_store)) +
+  geom_col()
+```
+
+The following code totals the dollars by month. It seems Spetemeber has the highest dollar total while July has the lowest.
+
+```{r some data by month}
+dollars_by_month <- data2 |> 
+  group_by(month) |> 
+  summarise(
+    total_dollars = sum(dollars)
+  ) |> 
+  arrange(desc(total_dollars)) |> 
+  print()
+```
+
+```{r bar plot of total dollars by month}
+ggplot(dollars_by_month, aes(x = month, y = total_dollars)) +
+  geom_col()
+```

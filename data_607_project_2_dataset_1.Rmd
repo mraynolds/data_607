@@ -1,0 +1,136 @@
+---
+title: "data_607_project_2_dataset_1"
+author: "Maxfield Raynolds"
+date: "2025-03-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages}
+library(tidyverse)
+```
+
+
+# Project 2 - Dataset 1
+
+## Tidying
+
+### Load the Dataset
+```{r load the dataset}
+data1 <- read.csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_607_project_2_dataset_1.csv")
+
+glimpse(data1)
+```
+### Pivot data longer
+
+The dataset has one primary issue keeping it from being tidy. The header columns are combinations of variable, both a month and an environmental measurement (temperature and humidity).
+
+The following code pivots the data longer while separating the column names into their separate components.
+
+```{r pivot longer and separate header roles}
+data1 <- data1 |> 
+  pivot_longer(
+    cols = !City,
+    names_to = c("environment", "month"),
+    names_sep = "_",
+    values_to = "measurement"
+  )
+
+glimpse(data1)
+```
+### Create a factor for months
+
+```{r factor for months}
+month_levels <- c(
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+)
+```
+
+
+### Clean up the data
+
+The data now could use some cleaning.
+
+The code block below does the following:
+
+- renames "Humid" to "humidity_%" to indicate that the measurement is "percent humidity"
+- renames "Temp" to "temp_f" to indicate that the measurement is "Temperature in Fahrenheit"
+- removes all unit measurements from the measurement column (degrees Fahrenheit and percent symbol) so that the digits can be used as numbers
+- converts the measurement column to numeric
+
+```{r mutate all columns}
+data_long <- data1 |>
+  mutate(
+    environment = str_replace_all(environment,"Humid","humidity_pct"),
+    environment = str_replace_all(environment,"Temp","temp_f"),
+    measurement = parse_number(measurement),
+    measurement = as.numeric(measurement),
+    month = factor(month, levels = month_levels),
+    city = City
+  )
+
+glimpse(data_long)
+```
+### Pivot Wider
+
+The data in the previous data frame, "data_long", is still not tidy as there are two types of data in the measurement column, humidity and temperature.
+
+The following code block pivots the data wider so that temperature and humidity are separated into their own columns.
+
+```{r pivot wider}
+data_tidy <- data_long |> 
+  pivot_wider(
+    names_from = environment,
+    values_from = measurement
+  )
+
+glimpse(data_tidy)
+```
+
+## Analysis
+
+# Averages
+
+The code block below calculates the average temperature and humidity for the dataset, first by month, and then by city.
+
+```{r average metrics by month and city}
+data_tidy |>
+  group_by(month) |> 
+  summarise(
+    avg_temp_f = round(mean(temp_f),1),
+    avg_humidity_pct = round(mean(humidity_pct),1)
+  )
+
+data_tidy |>
+  group_by(City) |> 
+  summarise(
+    avg_temp_f = round(mean(temp_f),1),
+    avg_humidity_pct = round(mean(humidity_pct),1)
+  )
+```
+
+# Plot
+
+A plot of temperature over time.
+
+```{r plot of temp}
+ggplot(data_tidy, aes(x = month, y = temp_f, group = city, color = city)) + 
+  geom_line()
+```
+A plot of humidty over time.
+
+```{r plot of humidity}
+ggplot(data_tidy, aes(x = month, y = humidity_pct, group = city, color = city)) + 
+  geom_line()
+```
+# Plot of temp and humidity together
+
+```{r plot of temp and humidity}
+ggplot(data_tidy, aes(x = month)) + geom_line(aes(y = humidity_pct, group = city, color = city)) +
+  geom_line(aes(y = temp_f, group = city, color = city)) +
+  scale_y_continuous(name = "Percent Humidity", sec.axis = sec_axis(~., name = "Temperature in Fahrenheit")) 
+```
