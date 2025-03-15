@@ -1,0 +1,583 @@
+---
+title: "data_607_project_2_single_file"
+author: "Maxfield Raynolds"
+date: "2025-03-12"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load packages}
+library(tidyverse)
+```
+
+
+# Project 2 - Dataset 1
+
+## Tidying
+
+### Load the Dataset
+```{r load the dataset 1}
+data1 <- read.csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_607_project_2_dataset_1.csv")
+
+head(data1)
+```
+### Pivot data longer
+
+The dataset has one primary issue keeping it from being tidy. The header columns are combinations of variables, both a month and an environmental measurement (temperature and humidity).
+
+The following code pivots the data longer while separating the column names into their separate components.
+
+```{r pivot longer and separate header roles}
+data1 <- data1 |> 
+  pivot_longer(
+    cols = !City,
+    names_to = c("environment", "month"),
+    names_sep = "_",
+    values_to = "measurement"
+  )
+
+head(data1)
+```
+### Create a factor for months
+
+```{r factor for months 1}
+month_levels <- c(
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+)
+```
+
+
+### Clean up the data
+
+The data now could use some cleaning.
+
+The code block below does the following:
+
+- renames "Humid" to "humidity_%" to indicate that the measurement is "percent humidity"
+- renames "Temp" to "temp_f" to indicate that the measurement is "Temperature in Fahrenheit"
+- removes all unit measurements from the measurement column (degrees Fahrenheit and percent symbol) so that the digits can be used as numbers
+- converts the measurement column to numeric
+
+```{r mutate all columns}
+data_long_1 <- data1 |>
+  mutate(
+    environment = str_replace_all(environment,"Humid","humidity_pct"),
+    environment = str_replace_all(environment,"Temp","temp_f"),
+    measurement = parse_number(measurement),
+    measurement = as.numeric(measurement),
+    month = factor(month, levels = month_levels)) |> 
+  rename(city = City)
+
+head(data_long_1)
+```
+### Pivot Wider
+
+The data in the previous data frame, "data_long_1", is still not tidy as there are two types of data in the measurement column, humidity and temperature.
+
+The following code block pivots the data wider so that temperature and humidity are separated into their own columns.
+
+```{r pivot wider}
+data_tidy_1 <- data_long_1 |> 
+  pivot_wider(
+    names_from = environment,
+    values_from = measurement
+  )
+
+head(data_tidy_1)
+```
+
+The data is now tidy and ready for analysis.
+
+## Analysis
+
+# Averages
+
+The code block below calculates the average temperature and humidity for the dataset, first by month, and then by city.
+
+```{r average metrics by month and city}
+data_tidy_1 |>
+  group_by(month) |> 
+  summarise(
+    avg_temp_f = round(mean(temp_f),1),
+    avg_humidity_pct = round(mean(humidity_pct),1)
+  )
+
+data_tidy_1 |>
+  group_by(city) |> 
+  summarise(
+    avg_temp_f = round(mean(temp_f),1),
+    avg_humidity_pct = round(mean(humidity_pct),1)
+  )
+```
+
+# Plot
+
+A plot of temperature over time.
+
+```{r plot of temp}
+ggplot(data_tidy_1, aes(x = month, y = temp_f, group = city, color = city)) + 
+  geom_line()
+```
+A plot of humidty over time.
+
+```{r plot of humidity}
+ggplot(data_tidy_1, aes(x = month, y = humidity_pct, group = city, color = city)) + 
+  geom_line()
+```
+# Plot of temp and humidity together
+
+```{r plot of temp and humidity}
+ggplot(data_tidy_1, aes(x = month)) + geom_line(aes(y = humidity_pct, group = city, color = city)) +
+  geom_line(aes(y = temp_f, group = city, color = city)) +
+  scale_y_continuous(name = "Percent Humidity", sec.axis = sec_axis(~., name = "Temperature in Fahrenheit")) 
+```
+
+
+# Project 2 - Dataset 2
+
+## Tidying
+
+### Load the Dataset
+```{r load the dataset 2}
+data2 <- read.csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_607_project_2_dataset_2.csv")
+
+head(data2)
+```
+
+### Pivot data longer
+
+The dataset appears to be list of store ids, their location, their country, and a monetary amount listed by month in a wide format. 
+
+To start the data will need to be pivoted longer in order take the months out of the column headers and place them into rows.
+
+The following code pivots the data longer into a column for the months and a column named "dollars", since it is not clear what the monetary data represents and the only indicator is a dollar symbol. 
+
+A note on the money: In reality, this would require an investigation into the dataset and the domain knowledge of what the money represents. Furthermore, all columns have dollar signs, but there are several countries listed, including the US and Canada which both use the dollars but different dollars. There are several more countries that use currencies other than the dollar, yet the values listed in their rows are as dollars. For the purposes of this project, we will use the assumption that the dataset is listed exclusively in US dollars since the source data does not specify.
+
+```{r pivot longer and separate by month}
+data2 <- data2 |> 
+  pivot_longer(
+    cols = !(Store.ID:Country),
+    names_to = "month",
+    values_to = "dollars"
+  )
+
+head(data2)
+```
+
+### Make a factor for months
+
+The following code makes an ordinal factor for the months.
+
+```{r factor for months 2}
+month_levels <- c(
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+)
+```
+
+### Clean up the data frame
+
+The following code cleans up the data frame. It:
+- renames columns
+- changes character classes of month to factor, and dollars to a double and removes the currency symbol
+
+```{r clean the data}
+data2 <- data2 |> 
+  rename(
+    store_id = Store.ID,
+    store = Store,
+    country = Country
+  ) |>
+  mutate(
+    month = factor(month, levels = month_levels),
+    dollars = parse_number(dollars),
+    store_id = as.character(store_id)
+  )
+
+head(data2)
+```
+
+### Tidy data
+
+The data frame is now clean and tidy. The data is significantly longer as a result but now it is in a form that will allow it to be analyzed easily and consistently.
+
+## Analysis
+
+The code below totals all of the monetary data by store and plots and sorts it in descending order. It seems store 3 in Laguardia in the US has the highest monetary information while Chelsea in the UK has the lowest.
+
+```{r some data by store}
+total_dollars_by_store <- data2 |> 
+  group_by(store_id, store, country) |> 
+  summarise(total_dollars = sum(dollars), .groups = "drop_last") |> 
+  arrange(desc(total_dollars)) |> 
+  print()
+```
+```{r bar plot of total dollars by store}
+ggplot(total_dollars_by_store, aes(x = reorder(store_id, -total_dollars), y = total_dollars)) +
+  geom_col()
+```
+
+The following code adds up the monetary data by country and sorts it in descending order. It also calculates the average dollars per store by country. From this data it is clear that the US has the highest total dollars. This is to be expected as it has the most stores. However it also has the higher average dollars per store.
+
+A notable insight from this data is that while France has only one store, it has the third highest total dollars and the second highest average dollars per store.
+
+```{r some data by country}
+total_dollars_by_country <- data2 |> 
+  group_by(country) |> 
+  summarise(
+    store_per_country = n()/11,
+    total_dollars = sum(dollars),
+    avg_dollars_per_store = (total_dollars / store_per_country)
+    ) |> 
+  arrange(desc(total_dollars)
+  ) |> 
+  print()
+```
+
+```{r bar plot of total dollars by country}
+ggplot(total_dollars_by_country, aes(x = reorder(country, -total_dollars), y = total_dollars)) +
+  geom_col()
+```
+
+```{r bar plot of avg dollars by country}
+ggplot(total_dollars_by_country, aes(x = reorder(country, -avg_dollars_per_store), y = avg_dollars_per_store)) +
+  geom_col()
+```
+
+The following code totals the dollars by month. It seems Spetemeber has the highest dollar total while July has the lowest.
+
+```{r some data by month}
+dollars_by_month <- data2 |> 
+  group_by(month) |> 
+  summarise(
+    total_dollars = sum(dollars)
+  ) |> 
+  arrange(desc(total_dollars)) |> 
+  print()
+```
+
+```{r bar plot of total dollars by month}
+ggplot(dollars_by_month, aes(x = month, y = total_dollars)) +
+  geom_col()
+```
+
+
+# Project 2 - Dataset 3
+
+## Tidying
+
+### Load the Dataset
+
+The following code loads the data set into r and fills NA into empty cells.
+
+```{r load the dataset 3}
+data3 <- read.csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/data_607_project_2_dataset_3.csv", na = c("","NA"))
+
+head(data3)
+```
+
+The code has several issues that keep it from being tidy, and even more issues that keep it from being clean.
+
+To tidy the following transformations will be executed:
+- Separate duration into a start and end date and create an actual duration column
+- Separate out environmental metrics (wind speed and pressure) so that each column only has one data type and only contains numeric data
+- Separate and convert monetary damage into separate columns for notes and numeric values, while eliminating the text based values
+- Pivot long areas affected so they can be evaluated individually
+
+Most columns also need some additional cleaning.
+
+The code block below begins separating out the date data. The date data is mostly a range of two dates, with very inconsistent formatting. The code below separates the original duration column into individual components for the start month, year, day and the end month, year, day, and a footnote column. The original dataset did not contain the actual footnote.
+
+```{r drop X column, separate date information}
+data3 <- data3 |> 
+  select(!X) |> 
+  separate_wider_regex(
+    Duration,
+    patterns = c(
+     start_month = "[A-Za-z]+",
+     "\\s*",
+     start_day = "[0-9]+",
+     ",*",
+     "\\s*",
+     start_year = "[0-9]*",
+     "\\W*",
+     end_month = "[A-Za-z]*",
+     "\\W*",
+     end_day = "[0-9]*",
+     "\\W*",
+     end_year = "[0-9]*",
+     "\\s*",
+     date_footnote = ".*"
+    )
+  )
+
+head(data3)
+```
+The following code copies the year into the start year from the end year columns wherever there is no start year. It also copies the start month into the end month column anywhere that an end month does not already exist.
+
+```{r copy empty date data}
+data3 <- data3 |> mutate(
+  start_year = if_else(start_year == "", end_year, start_year),
+  end_month = if_else(end_month == "", start_month, end_month),
+  end_day = if_else(end_day == "", start_day, end_day),
+  end_year = if_else(end_year == "", start_year, end_year),
+)
+
+head(data3)
+```
+
+The following code block converts the months to their numeric equivalent and then forms individual columns that contain the full start and end date, as well as the difference between the two so that there is a duration column.
+
+The duration column is a nice addition to the data as it automatically displays a summary of what the seconds mean in a more easily read metric.
+
+```{r create start and end dates, and duration}
+data3 <- data3 |>
+  mutate(
+    start_month = match(start_month, month.name),
+    start_date = make_date(start_year, start_month, start_day),
+    end_month = match(end_month, month.name),
+    end_date = make_date(end_year, end_month, end_day),
+    duration_days = as.numeric(end_date - start_date)
+    ) |> 
+  select(!start_month:end_year) |> 
+  relocate(start_date:duration_days, .after = Name)
+
+head(data3)
+```
+The following code separates wide wind speed and pressure data so each column only contains a single numeric value.
+
+```{r separate out wind_speed and pressure data}
+data3 <- data3 |> separate_wider_regex(Wind.speed,
+                           patterns = c(
+                             wind_speed_mph = "[0-9]+",
+                             "\\D+",
+                             wind_speed_km_per_hr = "[0-9]+",
+                             "\\D+")) |> 
+    mutate(Pressure = str_remove_all(Pressure,",")) |> 
+  separate_wider_regex(Pressure,
+                       patterns = c(
+                         pressure_hPa = "[0-9]+",
+                         "\\D+",
+                         pressure_inHg = "[0-9+\\.0-9]+",
+                         "\\D+"), too_few = "align_start")
+
+head(data3)
+```
+
+The following code block cleans up and converts the damages information into numeric values. The formatting is very inconsistent as loaded. This code makes it consistent so that it can be used in data analysis.
+
+```{r separate damage column into components}
+data3 <- data3 |> 
+  separate_wider_regex(Damage,
+                       patterns = c(damage_notes = "^\\[.*|>*",
+                                    "\\$?",
+                                    damage_amount_dollars = "\\$?\\s*\\d*\\.*\\d*",
+                                    "\\s*",
+                                    damage_modifier = "[A-Za-z]*"
+                                    ), too_few = "align_start")
+```
+
+```{r convert damage words into numbers}
+data3 <- data3 |> mutate(
+    damage_amount_dollars = str_remove_all(damage_amount_dollars, "\\$"),
+    damage_amount_dollars = as.numeric(damage_amount_dollars),
+    damage_amount_dollars = if_else(damage_modifier == "thousand", damage_amount_dollars*1000, damage_amount_dollars),
+    damage_amount_dollars = if_else(damage_modifier == "million", damage_amount_dollars*1000000, damage_amount_dollars),
+    damage_amount_dollars = if_else(damage_modifier == "billion", damage_amount_dollars*1000000000, damage_amount_dollars),
+    damage_notes = if_else(damage_modifier == "Unknown", "Unknown", damage_notes),
+    damage_notes = if_else(damage_notes == ">", "Damage greater than damage_amount", damage_notes)
+  )
+
+head(data3)
+```
+
+The code below saves a tidy version of the data set with the column "Areas.affected" and "REf" eliminated. This saves a now tidy data set that can be analyzed for all metrics except areas affected and REf. The areas affected will be pivoted longer later so that areas affected can be analyzed. However they are separated at this stage because when pivoted longer the financial information will be duplicated which could lead to inaccurate analysis of financial impacts. Additionally it has the same potential issue with deaths caused by the hurricanes. Since information about how deaths or financial costs were spread out over the affected areas, the most responsible thing would seem to be to separate out that data prior to pivoting the areas affected longer. 
+
+```{r remove areas affected}
+data_damage <- data3 |> 
+  select(!Areas.affected) |> 
+  select(!REf)
+
+head(data_damage)
+```
+The following code separates out the names, dates and REf column. The REf column contains multiple references to footnotes (whose meaning were not included with the dataset). In order to normalize the data storage, this code will move these references to their own data frame and then separate the data longer which will allow the footnotes to be individually referenced without unnecessarily duplicating a significant amount of data in one of the other data frames. This is similar to the need to separate out the monetary damages as well as death information. In a way separating out the data is starting the process of normalizing the data in order to reduce duplication. The name and dates act as a key so the footnotes can be referenced via another dat set.
+
+```{r create a reference dataset and pivot longer}
+data_ref <- data3 |> 
+  select(Name:end_date,REf) |>
+  rename(ref = REf, name = Name) |> 
+  mutate(
+    ref = str_remove_all(ref, "\\."),
+    ref = str_replace_all(ref, "\\]\\[", "\\],\\[")
+    ) |> 
+  separate_longer_delim(ref,",") |> 
+  mutate(
+    ref = str_remove_all(ref, "\\["),
+    ref = str_remove_all(ref, "\\]")
+  )
+
+head(data_ref)
+```
+
+
+The following code separates longer the areas affected column and saves the data to its own dataset separate from financial and death rates. This is necessary because the areas affected consist of multiple inconsistently named and formatted variables in each cell of the feature.
+
+This data is now tidy, but undergoes some additional cleaning further down.
+```{r pivot areas affected longer}
+data3 <- data3 |> 
+  select(!Deaths :REf) |> 
+  separate_longer_delim(
+   Areas.affected, delim = regex("\\w+[a-z][A-Z]\\w+|, | and")
+  ) |> 
+  rename(area_affected = Areas.affected)
+
+head(data3)
+```
+
+The following code attempts to clean and transform the areas affected data so that it is consistent. In a true analysis it would be important to explore and study and define more about how the areas affected are structured and what each area actually means. The data, as is, is very inconsistent. It uses different terms for what sound like the same region. 
+
+```{r clean area_affected to attempt to create uniform}
+data3 <- data3 |> 
+  mutate(
+    area_affected = str_remove_all(area_affected, "^\\s|\\s$"),
+   area_affected = str_replace_all(area_affected, "Caicos$", "Caicos Islands"),
+   area_affected = str_replace_all(area_affected, "Atlantic Canada", "Canada, Atlantic"),
+   area_affected = str_replace_all(area_affected, "Central Mexico", "Mexico, Central"),
+   area_affected = str_replace_all(area_affected, "Canadian", "Canada,"),
+   area_affected = str_replace_all(area_affected, "Cape Verde$", "Cape Verde Islands"),
+   area_affected = str_replace_all(area_affected, "Cayman $", "Cayman Islands"),
+   area_affected = str_replace_all(area_affected, "Central United States|central United States", "United States, Central"),
+   area_affected = str_replace_all(area_affected, "East Coast of the United States|Eastern Coast of the United States|Eastern United States|United States East Coast|United States East coast", "United States, Eastern"),
+   area_affected = str_replace_all(area_affected, "East Coast of the United States|Eastern Coast of the United States|Eastern United States|eastern United States", "United States, Eastern"),
+   area_affected = str_replace_all(area_affected, "Eastern Canada", "Canada, Eastern"),
+   area_affected = str_replace_all(area_affected, "Greater Antilles", "Antilles, Greater"),
+   area_affected = str_replace_all(area_affected, "Gulf Coast of the United States|United States Gulf Coast", "United States, Gulf Coast"),
+   area_affected = str_replace_all(area_affected, "Gulf of Mexico", "Mexico, Gulf"),
+   area_affected = str_replace_all(area_affected, "Leeward$", "Antilles, Leeward"),
+   area_affected = str_replace_all(area_affected, "Great Britain", "United Kingdom"),
+   area_affected = str_replace_all(area_affected, "Leeward Antilles|Leeward Islands", "Antilles, Leeward"),
+   area_affected = str_replace_all(area_affected, "Leeward Antilles|Leeward Islands|Lesser Antilles", "Antilles, Leeward"),
+   area_affected = str_replace_all(area_affected, "Mid-Atlantic|Mid-Atlantic States|Mid-Atlantic states", "United States, Mid-Atlantic"),
+   area_affected = str_replace_all(area_affected, "Midwestern Unites States", "United States, Midwestern"),
+   area_affected = str_replace_all(area_affected, "Northeastern Caribbean", "Caribbean, Northeastern"),
+   area_affected = str_replace_all(area_affected, "Northeastern United States", "United States, Northeastern"),
+   area_affected = str_replace_all(area_affected, "South Florida", "Florida, South"),
+   area_affected = str_replace_all(area_affected, "South Texas|Southern Texas", "Texas, South"),
+   area_affected = str_replace_all(area_affected, "South United States, Central", "United States, South Central"),
+   area_affected = str_replace_all(area_affected, "Southeast Mexico", "Mexico, Southeast"),
+   area_affected = str_replace_all(area_affected, "Southeastern United States", "Unite Sates, Southeastern"),
+   area_affected = str_replace_all(area_affected, "Southern Portugal", "Portugal, Southern"),
+   area_affected = str_replace_all(area_affected, "Southwestern Florida", "Florida, Southwestern"),
+   area_affected = str_replace_all(area_affected, "Southwestern Quebec", "Quebec, Southwestern"),
+   area_affected = str_replace_all(area_affected, "Northeastern Caribbean", "Caribbean, Northeastern"),
+   area_affected = str_replace_all(area_affected, "The Bahamas", "Bahamas"),
+   area_affected = str_replace_all(area_affected, "The Caribbean", "Caribbean"),
+   area_affected = str_replace_all(area_affected, "The Carolinas", "Carolinas"),
+   area_affected = str_replace_all(area_affected, "Northeastern Caribbean", "Caribbean, Northeastern"),
+   area_affected = str_replace_all(area_affected, "West Africa", "Africa, West"),
+   area_affected = str_replace_all(area_affected, "Western Europe", "Europe, Western"),
+   area_affected = str_replace_all(area_affected, "Western Mexico", "Mexico, Western"),
+   area_affected = str_replace_all(area_affected, "^Yucatá.*", "Yucatán Peninsula"),
+   area_affected = str_replace_all(area_affected, "western Cuba", "Cuba, Western")
+  )
+
+head(data3)
+```
+
+The following code replaces "Unknown" deaths with NA in the data_damage dataframe. In order to provide more consistency during analysis and not have any non-numeric data within the column.
+
+This dataset is now tidy as well.
+
+```{r replace unknown deaths with NA}
+data_damage <- data_damage |> 
+  mutate(
+  Deaths = na_if(Deaths, "Unknown")
+    )
+
+head(data_damage)
+```
+
+The following code block does some additional cleanup to both data frames. It renames column names and eliminates a helper column.
+
+```{r column rename and selection}
+data_damage <- data_damage |> 
+  relocate(damage_notes, .after = damage_amount_dollars) |> 
+  mutate(death_notes = if_else(str_detect(Deaths, ">"), "deaths are greater than", NA_character_),
+         death_notes = if_else(str_detect(Deaths, "None"), Deaths, death_notes),
+    Deaths = str_remove_all(Deaths, "[\\W]*"),
+    Deaths = str_remove_all(Deaths, "None"),
+    Deaths = as.numeric(Deaths),
+    wind_speed_mph = as.numeric(wind_speed_mph),
+    wind_speed_km_per_hr = as.numeric(wind_speed_km_per_hr),
+    pressure_hPa = as.numeric(pressure_hPa),
+    pressure_inHg = as.numeric(pressure_inHg)
+  ) |> 
+  select(!damage_modifier) |>
+  rename(deaths = Deaths, name = Name) |> 
+  relocate(death_notes, .after = deaths)
+
+data3 <- data3 |> 
+  mutate(
+    wind_speed_mph = as.numeric(wind_speed_mph),
+    wind_speed_km_per_hr = as.numeric(wind_speed_km_per_hr),
+    pressure_hPa = as.numeric(pressure_hPa),
+    pressure_inHg = as.numeric(pressure_inHg)
+  ) |> 
+  rename(name = Name)
+
+head(data3)
+head(data_damage)
+head(data_ref)
+```
+
+Both dataframes produced from the data set are now tidy and clean and ready for analysis.
+
+## Analysis
+
+Below is a cursory analysis of the now tidy data.
+
+The following code sorts and displays, then charts the Hurricanes by the ones that cost the most human life. 
+
+```{r top 10 damage}
+data_deaths <- data_damage |> 
+  arrange(desc(deaths)) |>
+  distinct(name,.keep_all = TRUE) |> 
+  slice_head(n = 10)
+```
+
+```{r plot deaths}
+ggplot(data_deaths, aes(x = reorder(name, -deaths),y = deaths)) + geom_col()
+```
+The following code displays then plots the top ten hurricanes by the estimated cost of damage for all huricanes that had data.
+
+```{r top 10 cost}
+data_cost <- data_damage |> 
+  arrange(desc(damage_amount_dollars)) |>
+  distinct(name,.keep_all = TRUE) |> 
+  slice_head(n = 10)
+```
+
+```{r plot cost}
+ggplot(data_cost, aes(x = reorder(name, -damage_amount_dollars), y = damage_amount_dollars)) + geom_col()
+```
+
+The following code displays then plots the top ten areas that have the most hurricanes in the dataset
+
+```{r top 10 areas with most hurricanes}
+data_areas_affected <- data3 |> 
+  filter(area_affected != "None") |>
+  count(area_affected, sort = TRUE) |>
+  top_n(10) |> 
+  print()
+```
+
+```{r plot area affected}
+ggplot(data_areas_affected, aes(x = reorder(area_affected, -n), y = n)) + geom_col()
+```
