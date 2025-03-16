@@ -1,4 +1,4 @@
-Category,Item Name,Item ID,Brand,Price,Variation ID,Variation Details, Variation Details 2
+Category,Item Name,Item ID,Brand,Price,Variation ID,Variation Details
 Electronics,Smartphone,101,TechBrand,699.99,101-A,Color: Black, Storage: 64GB
 Electronics,Smartphone,101,TechBrand,699.99,101-B,Color: White, Storage: 128GB
 Electronics,Laptop,102,CompuBrand,1099.99,102-A,Color: Silver, Storage: 256GB
