@@ -75,10 +75,19 @@ pqpath <- "assignment_7"
 write_dataset(cuny_mart, path = pqpath, format = "parquet")
 ```
 
+The following code displays the first 100 bit of the raw parquet file. It also reads the file directly from github.
+
+```{r display parquet code}
+readBin("https://raw.githubusercontent.com/mraynolds/data_607/main/part-0.parquet", what = "raw", n = 100)
+read_parquet("https://raw.githubusercontent.com/mraynolds/data_607/main/part-0.parquet", as_data_frame = TRUE)
+```
+
+
+
 The following code imports a parquet file into the r workspace and collects it for use in a dataframe.
 
 ```{r import parquet to r}
-cuny_mart_parquet <- open_dataset(pqpath) |> collect()
+cuny_mart_parquet <- read_parquet("https://raw.githubusercontent.com/mraynolds/data_607/main/part-0.parquet", as_data_frame = TRUE)
 
 head(cuny_mart_parquet)
 ```
@@ -98,12 +107,15 @@ cuny_mart_parquet |> group_by(category) |> summarize(
 library(jsonlite)
 ```
 
-The following code exports the original dataframe to JSON format. 
+The following code exports the original dataframe to JSON format and displays the raw JSON file. 
 
 ```{r export to json}
 cuny_mart_json_export <- toJSON(cuny_mart)
 write(cuny_mart_json_export, "cuny_mart_json_export.json")
+print(cuny_mart_json_export)
 ```
+
+
 
 The following code imports the data from file of the data written in JSON. Javascript object notation (JSON) is frequently the format for API returns and is easily written and read by machines but is also relatively easy to read for humans. It also allows for a hierarchical structure which may be useful but can also complicate importing the data. Finally, it is widely supported.
 
@@ -115,7 +127,7 @@ head(cuny_mart_json)
 
 A small bit of analysis: The following code counts the colors of the products from the imported json dataset.
 
-```{r}
+```{r filter color}
 cuny_mart_json |> filter(color != "") |> count(color)
 ```
 
@@ -126,12 +138,15 @@ library(rvest)
 library(htmlTable)
 ```
 
-The following code exports the data from the prepared dataframe to an html file.
+The following code exports the data from the prepared dataframe to an html file and displays the raw html file.
 
 ```{r export to html}
 cuny_mart_html_export <- htmlTable(cuny_mart)
 write(cuny_mart_html_export, "cuny_mart_html_export.html")
+cat(cuny_mart_html_export)
 ```
+
+
 
 The following code imports the data from a file of the data written in html. Hypertext Markup Language or HTML is used widely as a markup language, commonly in web pages. It is common and so manipulating data in html is a useful way of accessing data presented on webpages. The html from a website can then be scraped and then transformed. It is also relatively easy for humans to read basic html. However, it is not optimized for storing or communicating large amounts of data.
 
@@ -160,10 +175,15 @@ library(methods)
 library(xmlconvert)
 ```
 
-The following code imports an xml file and converts it into a dataframe for use in R. XML is an Extensible Markup language and is useful for carrying and storing data. It allows customization through tags and is hierarchical. However, it tends to have larger file sizes and slower queries so it is not useful for big data.
+The following code imports an xml file and displays the raw XML data. XML is Extensible Markup Language and is useful for carrying and storing data. It allows customization through tags and is hierarchical. However, it tends to have larger file sizes and slower queries so it is not useful for big data. 
 
 ```{r import an xml file}
 cuny_mart_xml <- read_xml("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/cuny_mart_xml.xml")
+print(cuny_mart_xml)
+```
+The following code block parses the XML and creates a dataframe from it.
+
+```{r parse the xml}
 cuny_mart_xml <- xmlParse(cuny_mart_xml)
 cuny_mart_xml <- xmlToDataFrame(cuny_mart_xml)
 
@@ -178,7 +198,7 @@ write_xml(df_to_xml(cuny_mart), "cuny_mart_xml.xml")
 
 A small bit of analysis: The following code shows the dollars per gigabyte for the electronic items.
 
-```{r dollats per gb}
+```{r dollars per gb}
 cuny_mart_xml |> mutate(
   storage = str_remove_all(storage, "\\D*"),
   dollar_per_gb = (as.numeric(price)/as.numeric(storage))
