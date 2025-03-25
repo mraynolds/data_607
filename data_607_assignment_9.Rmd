@@ -1,0 +1,60 @@
+---
+title: "data_607_assignment_9"
+author: "Maxfield Raynolds"
+date: "2025-03-25"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(httr2)
+library(jsonlite)
+```
+
+## The New York Times API
+
+The New York Times has provided significant access to their work through an Application Programming Interface (API). Developers or any one looking to access those APIs can register here: <https://developer.nytimes.com/>
+
+The below code will request the API key to be passed in like a password in order to help conceal the API key in this report
+
+```{r create a request for the API key to keep it private}
+api_key <- rstudioapi::askForPassword("Enter the API key")
+```
+
+#### A query
+
+The code below sets up and executes a query to the New York Times Article Search API and stores the results in a dataframe. The chosen query is "restaurant review". 
+
+```{r an initial query}
+query1 <- "restaurant+review"
+
+url1 <- paste0("https://api.nytimes.com/svc/search/v2/articlesearch.json?q=",query1,"&api-key=",api_key,"")
+
+results1 <- fromJSON(url1) |> as.data.frame()
+
+class(results1)
+
+print(results1)
+```
+
+### A second query
+
+The code below sets up and executes a query to the New York Times Books API and stores the results in a dataframe. The chosen query is for the current hardcover fiction top 15 bestseller list. 
+
+```{r another query}
+query2 <- "hardcover-fiction"
+
+url2 <- paste0("https://api.nytimes.com/svc/books/v3/lists/current/",query2,".json?api-key=",api_key,"")
+
+results2 <- fromJSON(url2)$results |> bind_rows()
+
+class(results2)
+
+print(results2)
+```
+
+### The NYT API in conclusion.
+
+The New York Times APIs allow for significant direct access to their published work. Being able to properly utilize them, and APIs in general, is a powerful tool for acquiring and extracting data.
