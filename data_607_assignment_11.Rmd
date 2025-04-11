@@ -1,0 +1,98 @@
+---
+title: "data_607_assignment_11"
+author: "Maxfield Raynolds"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Global Baseline Estimate
+
+This assignment uses a dataset of movie ratings to create a global baseline estimate that can be used to predict a critic's rating based on their average ratings and the average film ratings. For this task, the goal is to predict what the critic Param would rate the movie Pitch Perfect 2.
+
+The following code block loads the packages required for this task.
+
+```{r load packages}
+library(tidyverse)
+library(janitor)
+```
+
+The following code block imports the dataset and cleans it up a little.
+
+```{r import and clean up the import}
+movie_raw <- read_csv("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/MovieRatings.csv", skip_empty_rows = TRUE)
+
+movie_raw <- movie_raw |> clean_names() |> filter(critic != is.na(critic))
+```
+
+The following code makes the dataset tidy by pivoting longer. It retains the NA values for movies that were not rated by each critic, although this is not necessary. The NA values could also have been elimnated.
+
+```{r tidy the dataset}
+movie_ratings <- movie_raw |> 
+  pivot_longer(cols = !critic,
+               names_to = "movie",
+               values_to = "rating")
+```
+
+The code below creates the mean of every movie rating, creating the mean rating for all movies. This will be used as the global baseline for all movie ratings.
+
+```{r find the mean of all movie ratings}
+mean_movie <- movie_ratings |> 
+  summarize(mean_movie = mean(rating, na.rm = TRUE)) |> as.numeric()
+
+mean_movie
+```
+
+The following code creates a dataframe with the average rating for each movie based on all of the ratings for that specific movie.
+
+```{r average movie rating}
+movie_average <- movie_ratings |> 
+  group_by(movie) |> 
+  summarize(avg_rating = mean(rating, na.rm = TRUE))
+
+movie_average
+```
+
+The movie_average dataframe is then modified to include a column that shows the value of the average rating relative to the global mean movie rating. Each movie rating has the global movie mean subtracted from it.
+
+```{r create a column with the avg_rating minus the mean_movie value}
+movie_average <- movie_average |> 
+  mutate(
+    relative_movie_rating = (avg_rating - mean_movie)
+  )
+```
+
+The following code creates a dataframe with the average rating for each critic based on their ratings.
+
+```{r average user rating}
+critic_average <- movie_ratings |> 
+  group_by(critic) |> 
+  summarize(avg_rating = mean(rating, na.rm = TRUE))
+```
+
+The critic_average is then modified to include a column that shows the value of the average rating relative to the global mean movie rating. Each critic rating has the global movie mean subtracted from it.
+
+```{r create a column with the critic_avg minus the mean_movie}
+critic_average <- critic_average |> 
+  mutate(
+    relative_critic_rating = (avg_rating - mean_movie)
+  )
+```
+
+The following code estimates what Param would rate the movie Pitch Perfect 2.
+
+```{r calculate Param rating of Pitch Perfect 2}
+critic <- "Param"
+movie <- "pitch_perfect2"
+
+pitch_perfect_2_relative_rating <- movie_average$relative_movie_rating[movie_average$movie == movie]
+critic_relative_rating <- critic_average$relative_critic_rating[critic_average$critic == critic]
+
+Param_rating_pitch_perfect2 <- mean_movie + pitch_perfect_2_relative_rating + critic_relative_rating
+
+paste(critic, "would rate the movie",movie,"approximately", round(Param_rating_pitch_perfect2, 2))
+```
+
