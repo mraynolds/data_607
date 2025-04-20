@@ -1,0 +1,201 @@
+---
+title: "data_607_recommender_systems_discussion"
+author: "Maxfield Raynolds"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Scenario Analysis: Understanding and Improving on Apple Music's Recommender System
+
+### How we got here: An overview of music sharing and recommendation
+
+The radio was one of the earliest forms of mass music recommendation and access. Radio deejays would spin records from afar while listeners would be introduced to new music while waiting for their favorite songs to come on.
+
+Today, users are no longer limited by what comes on the radio. Music streaming services like Apple Music, Spotify, Amazon Music, and YouTube offer vast catalogs of music. These services differentiate themselves through exclusive content and recommender systems that help users discover and engage with new and old music alike. 
+
+Discovering and sharing new music is a delightful and compelling experience, one that has the ability to evoke emotion and create memories. A great music recommender system should be able to create similar feelings and be a powerful tool for converting and retaining listeners by making them feel something, remember something, or create a new memory.
+
+For this analysis, Apple Music will be the focus.
+
+### Scenario Analysis: The Organization (Apple Music)
+
+#### Who are the target users/organizations?
+
+Apple Music is a premium-only music streaming service. The target users are music listeners of any age, primarily ones using Apple hardware products. While Apple Music is accessible to people not using Apple hardware products, it is primarily a value added SaaS for users inside the Apple hardware ecosystem.
+
+#### What are Apple Music's key goals?
+
+Apple Music's key goals are to: 
+
+* Maximize users of Apple Music specifically, and Apple hardware products generally
+* Increase consumer loyalty and engagement with Apple products
+* Sustain consumer engagement with Apple Music. Since Apple Music has a fixed subscription price, there may be a subtle incentive to optimize rather than maximize user engagement.
+* Provide value to the listening experience
+
+#### How can Apple Music accomplish these goals?
+
+Apple Music can accomplish these goals in several ways:
+
+* Providing a seamlessly integrated user experience for Apple Music inside of the Apple product ecosystem
+* Provide unique content through original music related content such as:
+  + Exclusive recordings
+  + Exclusive artist access through interviews and curation
+  + Curated playlists
+* A superior recommender system executed in several ways:
+  + Recommend artists, albums, playlists, or "radio stations" within the app interface
+  + Recommend compelling exclusive content (as mentioned above)
+  + Recommend custom playlists unique to the user
+  + Autoplay songs that are compelling to the user after their selected music has completed
+    
+### Scenario Analysis: The Listener
+
+#### Who are the target users?
+
+* Music listeners, primarily those that use Apple hardware products
+
+#### What are the users' goals?
+
+* To access music and do some or all of the following:
+  + Listen to music
+  + Discover music
+  + Share music with friends, family or others
+  + Save music
+  + Create custom playlists
+  
+#### How can the user accomplish these goals?
+
+There are many ways to generally accomplish some or all of these goals:
+
+* Purchase and listen to music via hard copies or digital files
+* Listen to radio or online radio services
+* Utilize a streaming service and engage with the interface options, including:
+  + "Liking" songs
+  + Saving songs to their library
+  + Building custom playlists
+  + Listening to Apple's curated playlists
+
+### Reverse engineering Apple Music's recommender system
+
+#### Where recommendations primarily appear:
+
+At the heart of how listeners interact with Apple Music is the recommender system. It is what separates Apple Music from a simple catalog of music. In many ways it is the product.
+
+Apple Music's recommender system is present in two specific ways. 
+
+The first is recommendations in the app interface. 
+
+The most obvious of these is the "Home page" where the first banner is "Top Picks for You", a side scrolling mix of songs, albums, custom playlists, curated playlists, suggested artists, and recent listens.
+
+However, the entire "Home page" is essentially similar recommendations categorized by recently played music, recommended artists, genres, and customized playlists. The "Top Picks for You" are a summary of the entire "Home page". 
+
+Additional pages in the app include "New", "Radio", "Library", and "Search". Both "New" and "Radio" include recommendations that appear less directly customized. These likely appear in a recommended order but are not directly personalized.
+
+Only "Library" and "Search" appear to be more static but still contain less targeted recommendation by offering options to select genres or recently added content.
+
+The second way the recommender system is commonly present is the autoplay feature
+
+When a playlist ends, similar songs will continue to play. These songs will be a mix of songs similar to what has just been listened to in genre, tone, and style. They will be a mix songs in the user's library, songs the user has listend to previously, or new songs
+
+#### How are those recommendations made:
+
+Recommendations in Apple Music are likely made using a hybrid model of collaborative filtering and content-based filtering[^1].
+
+**Collaborative filtering**
+
+Collaborative filtering is similar to getting recommendations from people who have the same taste in music.
+
+Collaborative filtering finds songs that a user has listened to or liked, identifies other users that have listened to or liked the same songs, and recommends additional songs to the first user that the other users have listened to or liked. This is likely the primary mechanism of the recommender system.
+
+**Content-based filtering**
+
+Content-based filtering is similar to getting recommendations for songs based on the ways songs sound. 
+
+Content-based filtering analyzes the songs themselves for a broad range of characteristics such as tempo, tone, instruments, tags or labels, lyrics using Natural Language Processing, energy, loudness, etc. 
+
+Song recommendations are then made based on matching similar characteristics to the characteristics of a song that a user has liked or listened to. 
+
+This method helps alleviate the cold-start problem which occurs when a song or user is new and there is no information available to apply to a collaborative filtering model[^2].
+
+A combination of these two methods are likely the basis of the recommender system but there is a wide array of other factors that may be considered inside the recommendation model.
+
+#### Recommendations for improving the recommender
+
+While it is difficult to determine the full breadth of variables being considered by the Apple Music recommender system there are several avenues for improvement that can be considered.
+
+**1. Behavioral Patterns**
+
+A possible addition to collaborative filtering models is behavioral patterns. By matching not just what, but how a user listens, there may be space to improve recommendations. Some potential behaviour-based indicators include:
+
+* How long does a listener listen?
+* What time of day are they listening?
+* Do they prefer different types of music at different times of day?
+* Do they repeat the same songs over and over in a listening session or play all unique songs?
+* How many times do they listen to a song?
+* What is the diversity in their listening?
+* Do they listen to an artist or genre in a concentrated way and then switch or do they have constant diversity in their listening?
+
+These behavioral patterns offer a near endless array of possible insights for refining recommendations.
+
+**2. Contextual Awareness**
+
+Another consideration for listening is the context they are listening in. 
+
+Significant amounts of listening is done on people's phones which have the ability to identify where they are and what is happening around them. Of course this raises potential privacy concerns which would need to be balanced against the value in the recommendation improvements. 
+
+Comparing contextual factors and listening patterns could add information to a collaborative model. Some potential context-based indicators include:
+
+* Time of day: Is it morning? Is it night?
+* Weather: What do they listen to when it rains? When it's sunny? When it's cold?
+* Is it the week or the weekend?
+* What is the user location: domestic, international, rural urban?
+* Is it near a major holiday or personally important date for a person?
+
+Ultimately, these types of factors could improve a recommender system, and the data is readily available. However in all likelihood the additional data processing time and costs could be prohibitive relative to the improvements in the model. A model that relies on data generated entirely within the Apple ecosystem will be more efficient. 
+
+Furthermore, there are significant privacy trade offs that come into play if this method is used. The privacy concerns vs recommendation gains would potentially be Pyrrhic. 
+
+**3. Engagement Metrics**
+
+While its possible this is already incorporated into the model, ways of factoring or leveling engagement is a beneficial approach. How much a song, artist, album and genre are liked by a listener is a valuable way of adding strength to recommendations. Also considering the range of what is listened to via its diversity and novelty could lead to better recommendations. Ways to think about this include:
+
+* How many times a song is listened to?
+* Is the song added to a library?
+* Is the song added to a playlist?
+* Is the song shared to a friend or contact?
+* How often is a song returned to and how long are the intervals between the song being returned to?
+* How diverse are the songs being listened to?
+* How unique are the songs?
+
+Additionally, how much a song is "disliked" could be considered:
+
+* Is a song skipped?
+* Is a song removed from a playlist or library?
+
+**4. Feedback and Effectiveness**
+
+Feedback to the user about how a recommendation is made has the potential to improve user retention while improving engagement. If people know why something is being presented it increases transparency and trust.
+
+An additional point is that the effectiveness of the recommender system should not be so precise as to eliminate the surprise. Discovery was a familiar part of the listening experience as far back as the radio. There needs to be considerations for surprise within the recommender system.
+
+The effectiveness of the recommender system should also provide feedback to the system itself. Considering user retention, conversion, engagement time, and engagement level should all be used to improve and refine the recommender.
+
+### Conclusion
+
+The challenges of a music recommender system are similar to those of a physical product recommender system. Collaborative filtering is essentially the same, and content-based filtering is very similar, if potentially more complex, to item to item filtering reccomender systems. 
+
+However, due to the nature of music consumption, there are additional opportunities to create a powerful recommender. While purchasing a physical product is often a single event, daily interaction with music generates more data points for meaningful personalized recommendations. 
+
+Radio once introduced listeners to new music. Now a powerful recommender system can improve on that experience while helping users discover, connect, and remember music in both new and old ways.
+
+##### References
+
+[^1]: Ian Baracskay, Donald J Baracskay III, Mehtab Iqbal, and Bart Piet Knijnenburg. 2022. The Diversity of Music Recommender Systems. In 27th International Conference on Intelligent User Interfaces (IUI '22 Companion), March 22–25, 2022, Helsinki, Finland. ACM, New York, NY, USA 4 Pages. https://doi.org/10.1145/3490100.3516474
+
+[^2]: H. Yuan and A. A. Hernandez, "User Cold Start Problem in Recommendation Systems: A Systematic Review," in IEEE Access, vol. 11, pp. 136958-136977, 2023, doi: 10.1109/ACCESS.2023.3338705.
+keywords: {Systematics;Recommender systems;Bibliographies;Databases;Standards;User experience;Search engines;Reviews;User centered design;User experience;Recommendation systems;user cold start;systematic review},
+
+
