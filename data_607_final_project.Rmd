@@ -1,0 +1,882 @@
+---
+title: "Language Analysis of Presidential Addresses to Congess in Election Years"
+subtitle: "data_607_final_project"
+author: "Maxfield Raynolds"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r load packages}
+library(tidyverse)
+library(httr)
+library(jsonlite)
+library(rvest)
+library(xml2)
+library(tibble)
+library(purrr)
+library(topicmodels)
+library(tidytext)
+library(janitor)
+library(keyring)
+library(dplyr)
+```
+
+# Abstract
+
+In the United States, every year, the President's most important speech is an address to a joint session of Congress in the first part of the year, commonly referred to as The Sate of the Union. This paper looks at these speeches from 1947 to 2022 in election years, both general and midterm. 
+
+The paper analyzes the language used in the speeches and attempts to examine whether any correlation exists to the changes in congress makeup the following fall. The paper also examines the presidential approval rating before and after each speech.
+
+Sentiment analysis is performed on the text of all speeches. This is analyzed against the net changes in both houses of congress. The results of the analysis indicates that the language of the speech and election results are not correlated. Additionally, the speech does not appear to have an impact on the presidential approval rating. 
+
+# Introduction
+
+The US President's Address to a joint Session of Congress is one of, if not, the most important political speech of the year. Referred to as the State of the Union, it is a requirement enumerated in The US Constitution.
+
+Since 1947, this speech has been broadcast on national television giving voters direct access to the speeches delivery.
+
+This paper works through the process of acquiring the text of the addresses. Then the data is prepared for analysis via cleaning and tokenizing. Sentiment analysis is performed and this is then analyzed against the net changes that occurred in congress in the subsequent election and the change in presidential approval ratings. A linear regression is performed to analyze these comparisons statistically. 
+
+# Data Acquisition
+
+### Import Congressional Seat Changes
+
+The following code imports the changes in congress house seats by year from The Brookings Institute.
+
+```{r import congressional changes csv}
+cong_raw <- read_csv("https://www.brookings.edu/wp-content/uploads/2024/11/2-3.csv")
+```
+
+The congressional data is then sorted and filtered and cleaned a little, and placed into tidy format.
+
+```{r filter and clean and edit congressional changes}
+cong_tidy <- cong_raw |> 
+  filter(
+    Year >= 1947,
+    ElectionType == "General",
+  ) |> 
+  select(!NumSpecialElections) |> 
+  rename(gainingparty = GaingingParty) |> 
+  clean_names()
+```
+
+## Import List of Presidents
+
+A list of Presidents is imported into the work environment from OpenIntro.
+
+This data is appended with the two most recent presidents and is then cleaned, filtered and sorted into a more functionally useable tidy format.
+
+```{r import list of presidents}
+us_pres_raw <- read_csv("https://www.openintro.org/data/csv/president.csv")
+
+add_us_pres <- tibble(
+  potus = c("Donald Trump", "Joseph Biden"),
+  party = c("Republican", "Democratic"),
+  start = c(2017, 2021),
+  end = c(2021, 2025),
+  vpotus = c("Michael Pence", "Kamala Harris")
+)
+
+us_pres <- us_pres_raw |> bind_rows(add_us_pres) |> mutate(
+  party = if_else(party == "Democrate", "Democratic", party),
+  end = if_else(potus == "Barack Obama", 2017, end)
+) |> filter(start >= 1945,
+            potus != "Franklin Delano Roosevelt") |> 
+  mutate(
+    party_abbrev = str_extract(party, "[A-Z]")
+  ) |> 
+  select(!vpotus)
+
+summary_start_end_date <- us_pres |> 
+  group_by(potus) |> 
+  summarize(
+    start = min(start),
+    end = max(end)
+  )
+
+us_pres <- us_pres |> 
+  select(!start:end) |> 
+  left_join(summary_start_end_date, by = join_by(potus)) |> 
+  relocate(end, .after = start) |> 
+  distinct()
+
+years <- tibble(
+  year = (1945:2025)
+)
+
+us_pres <- full_join(years, us_pres, by = join_by(year == start)) |> fill(potus:end,.direction = "down") |> select(!end)
+```
+
+
+## Import Gallup Presidential Approval Ratings
+
+```{r}
+gallup_urls <- tibble(
+  url = paste0("https://raw.githubusercontent.com/mraynolds/data_607/refs/heads/main/gallup_presidential_approval_",1:14,".csv")
+) 
+```
+
+```{r function for url to gallup}
+approval_rating <- function(gallup) {
+gallup_url <- read_csv(gallup, show_col_types = FALSE)
+}
+```
+
+The list of urls was then used to scrape the files of their approval ratings using the map_dfr() function.
+
+```{r map the gallup data to a dataframe, warning=FALSE}
+raw_gallup_data <- map_dfr(gallup_urls$url, approval_rating)
+
+gallup_data <- raw_gallup_data |> 
+  clean_names() |> 
+  filter(!str_detect(date, "2025")) |> 
+  mutate(
+    approve = if_else(approve == "NA", percent_approve, approve),
+    x_1 = str_trim(x_1)
+  ) |> select(!percent_approve) |>  
+  separate_wider_delim(
+    x_1,
+    delim = " ",
+    names = c("month", "year"),
+    too_many = "merge"
+  ) |> mutate(
+    month = str_to_lower(str_trim(month)),
+    year = str_trim(year),
+    date = str_to_lower(date)
+  ) |> 
+  mutate(
+    start_date = case_when(
+      str_detect(date, "\\w{3} \\d{1,2}, \\d{4}") ~ as_date(date, format = "%b %d, %Y"),
+      str_detect(date, "\\d{2,4} \\w{3} \\d{1,2}-\\d{1,2}") ~ as_date(paste(year, str_extract(str_extract(date, "^\\d{2,4} \\w{3} \\d{1,2}"), "\\w{3} \\d{1,2}")), format = "%Y %b %d"),
+     str_detect(date, "\\d{2,4} \\w{3} \\d{1,2}-\\w{3} \\d{1,2}") ~ as_date(paste(year, str_extract(str_extract(date, "(?<=-)\\w{3} \\d{1,2}"), "\\w{3} \\d{1,2}")), format = "%Y %b %d")
+  ),
+    end_date = case_when(
+       str_detect(date, "\\w{3} \\d{1,2}, \\d{4}") ~ as_date(date, format = "%b %d, %Y") + 7,
+       str_detect(date, "\\d{2,4} \\w{3} \\d{1,2}-\\d{1,2}") ~ as_date(
+         paste(
+           year, str_extract(
+             date, "(?<=\\d{2,4} )\\w{3}"
+           ), str_extract(
+             date, "(?<=-)\\d{1,2}$"
+           )
+         ), format = "%Y %b %d"
+       ),
+       str_detect(date, "\\d{2,4} \\w{3} \\d{1,2}-\\w{3} \\d{1,2}") ~ as_date(
+         paste(
+           year, str_extract(
+             date, "(?<=-)\\w{3} \\d{1,2}")
+         ), format = "%Y %b %d"
+       )
+    ), id = paste0(year, "_", president)
+  ) |> select(!date)
+```
+
+
+### Speech Data
+
+## A False Start
+
+Initially an attempt was made to acquire the Presidential Addresses from a government source: govinfo.gov using the following code.
+
+```{r gov info api key}
+govinfo_apikey <- key_get("govinfo.gov")
+```
+
+```{r the query and collection}
+query <- "PRESIDENTIAL ADDRESS BEFORE A JOINT SESSION OF CONGRESS"
+collection <- "PPP"
+```
+
+```{r search url}
+govinfo_url <- "https://api.govinfo.gov/search"
+```
+
+```{r search header}
+header <- add_headers(
+  `X-Api-Key` = govinfo_apikey,
+  `Content-Type` = "application/json",
+  `Accept` = "application/json"
+)
+```
+
+```{r search body}
+body <- list(
+  query = query,
+  pageSize = 1000,
+  offsetMark = "*",
+  sorts = list(list(
+    field = "relevancy",
+    sortOrder = "DESC"
+  )),
+  historical = TRUE,
+  resultLevel = "default"
+)
+```
+
+```{r get request}
+search <- POST(govinfo_url,
+               header,
+               encode = "raw",
+               body = toJSON(body, auto_unbox = TRUE)
+)
+```
+
+```{r parse json}
+content_json <- content(search, as = "text", encoding = "UTF-8")
+results <- fromJSON(content_json)
+
+data <- results$results
+
+data1 <- data |> filter(dateIssued >= 1947-01-01,
+                        str_detect(title, regex("joint session", ignore_case = TRUE))) |> arrange(dateIssued)
+```
+
+```{r return links that have text}
+links <- as.data.frame(results$results$download$txtLink)
+first_url <- links$`results$results$download$txtLink`[1]
+
+```
+
+```{r query text of a speech}
+detail_url <- paste0(first_url, "?api_key=", govinfo_apikey)
+
+res_detail <- GET(detail_url)
+
+status_code(res_detail)
+
+detail_content <- read_html(content(res_detail, as = "text"))
+
+html_speech <- detail_content |> 
+  html_elements("pre") |> 
+  html_text()
+```
+
+While this method successfully acquired text of speeches directly from the government API, after some explanation, issues were discovered in how the government had speeches labelled in their database. The issues included the following: the naming of files was inconsistent, not all files were in the same location, there were may other types of files named similarly, and the formatting of the html made it difficult to consistently extract identifying information.
+
+It would have been possible to acquire the data this way, but the granular and manual nature of the cleaning process would have made it an unnecessarily long task, especially when other sources were available. The decision was made to no longer pursue acquiring this data through the API.
+
+## A Better Source
+
+Instead, the speech data was scraped from The American Presidency Project, a source for Presidential documents and facts hosted by the University of California, Santa Barbara.
+
+The process began by scraping a search of urls the would contain the speeches.
+
+The following code scrapes The Presidency Project for the URLs that contain the Presidential Addresses to Join Sessions of Congress, including State of The Union speeches.
+
+```{r scrape speech search urls}
+speech_urls_html <- read_html("https://www.presidency.ucsb.edu/advanced-search?field-keywords=%22Address%20Before%20A%20Joint%22&field-keywords2=&field-keywords3=&from%5Bdate%5D=&to%5Bdate%5D=&person2=&category2%5B0%5D=406&category2%5B1%5D=8&category2%5B2%5D=45&items_per_page=100&order=field_docs_start_date_time_value&sort=desc")
+
+date_node <- html_elements(speech_urls_html, ".views-field-field-docs-start-date-time-value")
+president_node <- html_elements(speech_urls_html, ".views-field-field-docs-person")
+url_node <- html_elements(speech_urls_html, ".views-field-title a")
+
+date_txt <- (xml_text(date_node, trim = TRUE))[-1]
+pres_txt <- (xml_text(president_node, trim = TRUE))[-1]
+url_txt <- html_attr(url_node, "href")
+
+url_table <- tibble(
+  date = date_txt,
+  pres = pres_txt,
+  url = url_txt
+)
+```
+
+A page of just links to State of the Union speeches was then scraped and bound to the list of urls obtained in the first scrape.
+
+```{r scrape state of the union speeches}
+sou_urls_html <- read_html("https://www.presidency.ucsb.edu/documents/app-categories/spoken-addresses-and-remarks/presidential/state-the-union-addresses?items_per_page=100")
+
+date_node <- html_elements(sou_urls_html, ".date-display-single")
+president_node <- html_elements(sou_urls_html, ".col-sm-4 p")
+url_node <- html_elements(sou_urls_html, ".field-title a")
+
+date_txt <- (xml_text(date_node, trim = TRUE))
+pres_txt <- (xml_text(president_node, trim = TRUE))
+url_txt <- html_attr(url_node, "href")
+
+sou_table <- tibble(
+  date = date_txt,
+  pres = pres_txt,
+  url = url_txt
+)
+
+url_table <- url_table |> rbind(sou_table)
+```
+
+The list of urls was then formatted and cleaned so that they can be used to scrape the actual text of the speeches.
+
+```{r clean url table}
+url_table1 <- url_table |> 
+  mutate(
+    date = as_date(date, format = "%B %e, %Y"),
+    pres = str_trim(pres),
+    pres = str_replace_all(pres, "-", " "),
+    url = paste0("https://www.presidency.ucsb.edu",url)
+  ) |> arrange(desc(date)) |> 
+  filter(pres != "U.S. Congress",
+         date >= as.Date("1947-01-01"),
+         date < as.Date("2025-01-01")
+        ) |> 
+  distinct(url, .keep_all = TRUE)
+```
+
+A function was written to aid in scraping and collecting the speech data into a dataframe along with identifying information about each speech.
+
+```{r function for url to speech}
+speech_conversion <- function(url) {
+speech <- read_html(url)
+
+date_node <- html_elements(speech, ".date-display-single")
+pres_node <- html_elements(speech, ".diet-title")
+speech_node <- html_elements(speech, ".field-docs-content")
+
+date_txt <- xml_text(date_node, trim = TRUE)
+pres_txt <- xml_text(pres_node, trim = TRUE)
+speech_txt <- xml_text(speech_node, trim = TRUE)
+
+speech_tbl <- tibble(
+  date = date_txt,
+  pres = pres_txt,
+  speech = speech_txt
+)
+}
+```
+
+The list of urls was then used to scrape the text of each speech using the map_dfr() function.
+
+```{r map the speeches to a dataframe}
+raw_speech_data <- map_dfr(url_table1$url, speech_conversion)
+```
+
+## Clean & Tidy Speech Data
+
+The acquired speech text was then formatted and cleaned to allow for consistent referencing during the analysis process.
+
+```{r format speech_data}
+speech_data <- raw_speech_data |> 
+  mutate(
+    date = as.Date(date, format = "%B %e, %Y"),
+     pres = str_remove_all(pres, regex("\\(1st Term\\)|\\(2nd Term\\)")),
+    pres = trimws(pres),
+    speech = str_remove_all(speech, "\\[.*?\\]"),
+    pres = str_remove_all(pres, ", Jr."),
+    pres = str_remove_all(pres, "\\.")
+  ) |> 
+  separate_wider_delim(
+    pres,
+    delim = " ",
+    names = c("first", "last"),
+    too_many = "merge",
+    cols_remove = FALSE
+  ) |> 
+  separate_wider_delim(
+    last,
+    delim = " ",
+    names = c("initial", "last"),
+    too_few = "align_end",
+  ) |>
+  mutate(
+    id = paste0(year(date), "_", last)
+  ) |> select(!first:last) |> 
+  relocate(id, .before = speech) |> 
+  filter(
+    year(date) %in% cong_tidy$year,
+    !between(date, as.Date("1960-02-01"),as.Date("1960-12-31")),
+    !date %in% c(as.Date("1948-04-19"), as.Date("1976-01-31"), as.Date("1978-09-18"), as.Date("1982-02-09"), as.Date("1982-03-15"), as.Date("1982-03-16"), as.Date("1984-06-04"), as.Date("1990-09-11"))
+  )
+```
+
+Approval ratings were filtered and averaged for the 60 days, prior to the speech and after the speech, and were added to a dataframe of speech dates.
+
+```{r}
+speech_data_ratings <- speech_data |> 
+  rowwise() |> 
+  mutate(
+    pre_speech_approval = mean(
+      gallup_data$approve[gallup_data$end_date < date & gallup_data$end_date >= date - days(60)],
+      na.rm = TRUE
+    ),
+    post_speech_approval = mean(
+      gallup_data$approve[gallup_data$start_date > date & gallup_data$end_date <= date + days(60)],
+      na.rm = TRUE
+    )
+  ) |> 
+  ungroup() |> 
+  filter(
+   !is.nan(pre_speech_approval),
+   !is.nan(post_speech_approval)
+  )
+```
+
+The speech text was then split into individual sentences so that the sentences could be tracked for analysis.
+
+```{r split by sentence and add sentence numbers}
+sentence_data <- speech_data |> 
+  arrange(date) |> 
+  mutate(
+    speech_number = row_number()
+  ) |> 
+  separate_longer_delim(speech, delim = ". ") |> 
+  separate_longer_delim(speech, delim = "! ") |> 
+  separate_longer_delim(speech, delim = "? ") |> 
+  separate_longer_delim(speech, delim = "!") |> 
+  separate_longer_delim(speech, delim = "?") |> 
+  group_by(speech_number) |> 
+  mutate(
+    sentence_number = row_number()) |> ungroup()
+```
+
+A list of stop words was loaded, and the text of the speeches were tokenized.
+
+```{r unnest the speech data and remove stop words}
+data(stop_words)
+
+tidy_speech <- sentence_data |> 
+  unnest_tokens(word, speech) |> 
+  anti_join(stop_words, by = "word")
+```
+
+Following tokenization and removal of common stop words, an inspection of the remaining words by frequency reveals that the first ten words are fairly common and non-descriptive.
+
+```{r what are the ten most common words}
+tidy_speech |> group_by(word) |> 
+  summarize(
+    count = n(),
+  ) |> arrange(desc(count)) |> 
+  slice_max(n = 10, order_by = count)
+```
+
+A list of custom stop words were created to eliminate the most commonly used words.
+
+```{r custom stop words}
+custom_stop_words <- tidy_speech |> group_by(word) |> 
+  summarize(
+    count = n(),
+  ) |> arrange(desc(count)) |> slice_max(n = 10, order_by = count) |> 
+  mutate(lexicon = "custom") |> 
+  select(!count)
+```
+
+The custom stop words were then removed.
+
+```{r remove custom stop words}
+tidy_speech <- tidy_speech |> 
+  anti_join(custom_stop_words, by = "word")
+```
+
+The current ten most common words. The counts of these words are much more similar than the previously removed words.
+
+```{r now what are the ten most common words}
+tidy_speech |> group_by(word) |> 
+  summarize(
+    count = n(),
+  ) |> arrange(desc(count)) |>
+  slice_max(n = 10, order_by = count)
+```
+
+# Sentiment Analysis
+
+For sentiment analysis the AFINN lexicon was selected as it gives sentiments with an ordinal magnitude from -5 to 5. The following code joins the speech tokens with the AFINN lexicon.
+
+```{r afinn}
+afinn <- tidy_speech |> 
+  inner_join(get_sentiments("afinn"), by = join_by(word)) |> 
+  group_by(id, index = sentence_number %/% 5) |> 
+  summarise(sentiment = sum(value), .groups = "drop") |> 
+  mutate(method = "AFINN")
+```
+
+The data was then prepared for plotting.
+
+```{r prepare afinn data to be plotted}
+afinn_plot <- afinn |> 
+  separate_wider_delim(id,
+                       delim = "_",
+                       names = c("year", "pres"),
+                       cols_remove = FALSE) |> 
+  mutate(year = as.numeric(year)) |> 
+  left_join(us_pres, by = join_by(year))
+```
+
+The following code prepares the data for further analysis
+
+```{r prepare the date for further analysis}
+afinn_avg_senti <- afinn_plot |> mutate(
+  pres = str_remove_all(id, regex("[0-9]*_"))
+) |> relocate(pres, .before = id) |> 
+  group_by(pres, year, party_abbrev) |> 
+  summarise(
+    avg_sentiment = mean(sentiment), .groups = "drop"
+  ) |> arrange(desc(avg_sentiment)) |> ungroup() |> 
+  left_join(cong_tidy, by = "year") |> filter(
+    seats != 0
+  ) |> mutate(
+    seats = as.numeric(seats),
+    change = case_when(
+      party_abbrev == gainingparty ~ seats,
+      party_abbrev != gainingparty ~ -seats
+    )
+  ) 
+```
+
+This code prepares the approval ratings data for further plotting and analysis.
+
+```{r average sentiment combined with approval ratings}
+approval_sentiment <- speech_data_ratings |> 
+  left_join(afinn |> group_by(id) |> summarise(
+    avg_sentiment = mean(sentiment), .groups = "drop"
+  ), by = join_by(id)) |> 
+  mutate(
+    change_in_approval = post_speech_approval - pre_speech_approval
+  ) |> left_join(
+    afinn_avg_senti |> mutate(
+      id = paste0(year,"_",pres) 
+    ), by = join_by(id)
+  )
+
+approval_sentiment_d <- approval_sentiment |> filter(gainingparty == "D")
+
+approval_sentiment_r <- approval_sentiment |> filter(gainingparty == "R")
+```
+
+The following plot shows the average sentiment of the joint addresses in election years by party.
+
+```{r plot of the average sentiment by year and party}
+ afinn_plot |> group_by(id, party) |> summarise(avg_sentiment = mean(sentiment)) |> ggplot(aes(id, avg_sentiment, fill = party)) +
+  geom_col() +
+   xlab("Year-President") +
+   ylab("Average Sentiment") +
+   ggtitle("Average Sentiment of Presidential Joint Address to Congress") +
+   labs(fill = "Average Sentiment") +
+   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+   scale_fill_manual(values = c("Democratic" = "#2E74C0", "Republican" = "#CB454A"))
+```
+
+The plot indicates that there has been, on average, a near linear decline in the average sentiment of the joint address to congress.
+
+```{r scatterplot of sentiment by year and party}
+afinn_plot |> group_by(year, party) |> summarise(avg_sentiment = mean(sentiment), .groups = "drop") |> 
+  ggplot(aes(year, avg_sentiment, color = party)) +
+  geom_point() +
+  xlab("Year") +
+  ylab("Average Sentiment") +
+  ggtitle("Average Sentiment of Presidential Joint Address to Congress") +
+  labs(color = "Party") +
+  scale_color_manual(values = c("Democratic" = "#2E74C0", "Republican" = "#CB454A")) +
+  geom_smooth(method = "lm", se = FALSE)
+```
+Indeed the pattern of linear decline is even clearer when plotted as a scatterplot with a line of best fit. It also raises the question: Is there a difference in sentiment by party?
+
+Is there a way to examine it against changes in Congress in those years?
+
+Below is a chart of the changes in congress by chamber.
+
+```{r changes in congress by chamber plot}
+election_results <- cong_tidy |> 
+  mutate(
+    seats = as.numeric(seats),
+    seat_change_sign = case_when(
+      gainingparty == "D" ~ -seats,
+      gainingparty == "R" ~ seats,
+      TRUE ~ 0
+    )
+  )
+
+ggplot(election_results, aes(y = factor(year), x = seat_change_sign, fill = gainingparty)) +
+  geom_col() +
+  geom_hline(yintercept = 0, color = "black") +
+  facet_wrap(~ chamber, ncol = 1, scales = "free_y") +
+  scale_fill_manual(values = c("D" = "#2E74C0", "R" = "#CB454A")) +
+  labs(
+    x = "Election Year", 
+    y = "Seat Change", 
+    title = "Net Seat Changes in Congress by Year and Party",
+    fill = "Party"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+```
+
+
+
+Below is a scatterplot of the average sentiment vs seat changes by chamber. There is no discernible pattern. This likely indicates that the two are not correlated.
+
+```{r}
+ggplot(afinn_avg_senti, aes(x = avg_sentiment, y = seats, color = gainingparty)) +
+  geom_point() +
+  scale_color_manual(values = c("D" = "#2E74C0", "R" = "#CB454A"))
+```
+
+The following code performs a linear regression on with average sentiment as the explanatory variable and the change in congressional seats and the dependent variable. 
+
+```{r}
+lm <- lm(change ~ avg_sentiment, data = afinn_avg_senti)
+
+summary(lm)
+```
+The results show that a linear regression does not indicate a relationship between these two variables. The p-values indicate a lack of statistical significance for a relationship and the adjusted r-squared shows that the model does not explain the variance of the observations. 
+
+There is no meaningful relationship identified between the language of the speeches and the change in congressional seats in the following election.
+
+
+# Speech Sentiment vs Presidential Approval Rating
+
+
+```{r plot of change in approval vs sentiment}
+ggplot(approval_sentiment, aes(x = avg_sentiment.x, y = change_in_approval, color = party_abbrev)) + geom_point() +
+   scale_color_manual(values = c("D" = "#2E74C0", "R" = "#CB454A")) +
+  facet_wrap(~party_abbrev) +
+   labs(
+    x = "Average Speech Sentiment", 
+    y = "Change in Approval", 
+    title = "Average Speech Sentiment and Change in Presidential Approval Rating",
+    color = "Party"
+  ) +
+  theme_minimal()
+```
+
+The plot of the average speech sentiment against the change in presidential approval before and after the state of the union shows no discernible patterns. The expectation is there is no direct relationship between these features.
+
+```{r average sentiment vs approval lm}
+lm_approval <- lm(change_in_approval ~ avg_sentiment.x, data = approval_sentiment)
+
+summary(lm_approval)
+```
+
+This expectation is confirmed by a linear regression. There is not a statistically significant relationship between the speech sentiment and presidential approval.  For good measure there are two linear regressions below with the variables separated by party of the president at the time of the speech, again there is no identified statistical relationship.
+
+```{r average sentiment vs approval lm d}
+lm_approval_d <- lm(change_in_approval ~ avg_sentiment.x, data = approval_sentiment_d)
+
+summary(lm_approval_d)
+```
+
+```{r average sentiment vs approval lm r}
+lm_approval_r <- lm(change_in_approval ~ avg_sentiment.x, data = approval_sentiment_r)
+
+summary(lm_approval_r)
+```
+
+## Additional Analysis and Exploration
+
+### Individual speeches plotted using the Afinn
+
+Below is an individual charting of each of the speeches' sentiment based on the Afinn lexicon.
+
+```{r}
+ggplot(afinn, aes(index, sentiment, fill = sentiment)) +
+  geom_col() +
+  facet_wrap(~id)
+```
+
+## Individual speeches plotted using bing lexicon
+
+Plotting all the speeches using the bing lexicon, shows similar sentiment patterns to the afinn plots.
+
+```{r}
+bing <- tidy_speech |> 
+  inner_join(get_sentiments("bing"), by = join_by(word)) |> 
+  mutate(method = "Bing et al.")
+```
+
+```{r}
+bing |> mutate(
+   pres = str_remove_all(id, regex("[0-9]*_"))) |> 
+  relocate(pres, .before = id) |> filter(
+    sentiment %in% c("positive",
+                     "negative")
+  ) |> 
+  count(id, method, index = sentence_number %/% 5, sentiment) |> 
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0,
+              ) |> 
+  mutate(sentiment = positive - negative) |> 
+ggplot(aes(index, sentiment, fill = sentiment)) +
+  geom_col() +
+  facet_wrap(~id) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+## Individual speeches plotted using the NRC lexicon
+
+The NRC plots are similar to the previous lexicons.
+
+```{r warning=FALSE}
+nrc <- tidy_speech |> 
+  inner_join(get_sentiments("nrc"), by = join_by(word)) |> 
+  mutate(method = "nrc")
+```
+
+```{r}
+nrc |> mutate(
+   pres = str_remove_all(id, regex("[0-9]*_"))) |> 
+  relocate(pres, .before = id) |> 
+  count(id, method, index = sentence_number %/% 5, sentiment) |> 
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0,
+              ) |> 
+  mutate(sentiment = positive - negative) |> 
+ggplot(aes(index, sentiment, fill = sentiment)) +
+  geom_col() +
+  facet_wrap(~id) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+```{r}
+all_sentiment <- bind_rows(bing, nrc) |> filter(
+    sentiment %in% c("positive",
+                     "negative")
+  ) |> 
+  count(id, method, index = sentence_number %/% 5, sentiment) |> 
+  pivot_wider(names_from = sentiment,
+              values_from = n,
+              values_fill = 0,
+              ) |> 
+  mutate(sentiment = positive - negative) |> 
+  bind_rows(afinn)
+```
+
+Below is a side by side comparison of all three lexicons when applied to President Trump's 2020 State of the Union.
+
+```{r}
+all_sentiment |> 
+  filter(
+    id == "2020_Trump"
+  ) |> 
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col() +
+  facet_wrap(~method)
+```
+
+Below is another plot of all three lexicons but applied to President Biden's 2022 State of the Union.
+
+```{r}
+all_sentiment |> 
+  filter(
+    id == "2022_Biden"
+  ) |> 
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col() +
+  facet_wrap(~method)
+```
+
+## Topic Modeling
+
+The following code prepares the speech data for casting to a document-term matrix.
+
+```{r tidy the data for converstion to a document-term matrix}
+tidy_for_dtm <- tidy_speech |>
+  group_by(id, word) |> 
+  summarise(
+    count = n(), .groups = "drop"
+  )
+```
+
+Then the data is cast to the document-term matrix.
+
+```{r cast to dtm}
+dtm <- tidy_for_dtm |> 
+  cast_dtm(id, word, count) |> print()
+```
+
+Finally the document-term matrix is processed using the Latent Dirichlet allocation using a topic count of 3.
+
+```{r Latent Dirichlet allocation}
+sou_lda <- LDA(dtm, k = 3, control = list(seed = 1234))
+
+sou_lda
+```
+
+The results are then tidied.
+
+```{r tidy topics}
+sou_tm <- tidy(sou_lda, matrix = "beta")
+```
+
+The plot below charts the 10 most common terms in each of the three factors.
+
+```{r plot of top terms per topic}
+sou_top_terms <- sou_tm |> 
+  group_by(topic) |> 
+  slice_max(beta, n = 10) |> 
+  ungroup() |> 
+  arrange(topic, -beta)
+
+sou_top_terms |> 
+  mutate(term = reorder_within(term, beta, topic)) |> 
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col() +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+When considering the words there appears to be an approximate pattern to the topics. Topic 1 is potentially about domestic family issues related to jobs, children, and the economy. While Topic 2 is likely related to international relations including military conflicts, international economy, and defense. Finally, Topic 3, appears to relate to domestic issues again but more related to freedom and security in domestic and personal issues. This contrasts with Topic 1 which appeared more related to domestic economic and familial concerns.
+
+```{r log ratio of Beta}
+sou_beta_wide <- sou_tm |> filter(term != "folks") |> 
+  mutate(topic = paste0("topic", topic)) |> 
+  pivot_wider(names_from = topic, values_from = beta) |> 
+  filter(topic1 > .001 | topic2 > .001 | topic3 > .001) |> 
+  mutate(
+    log_ratio_2_to_1 = log2(topic2 / topic1),
+    log_ratio_3_to_1 = log2(topic3 / topic1),
+    log_ratio_3_to_2 = log2(topic3 / topic2)
+    )
+
+sou_beta_wide
+```
+
+```{r plot of difference between topics 1 to 2}
+sou_beta_plot1 <- bind_rows(
+  sou_beta_wide |> 
+  select(term, log_ratio_2_to_1) |> 
+  slice_max(log_ratio_2_to_1, n = 10),
+   sou_beta_wide |> 
+  select(term, log_ratio_2_to_1) |> 
+  slice_min(log_ratio_2_to_1, n = 10)
+) |> arrange(desc(log_ratio_2_to_1))
+  
+ggplot(sou_beta_plot1, aes(log_ratio_2_to_1, reorder(term, log_ratio_2_to_1), fill = log_ratio_2_to_1)) +
+  geom_col()
+```
+These topics are further supported by the log ratios. This log ratio of Topic 2 to Topic 1 we see that Topic 1 relates to expenditures and increases, compassion, and essentials. While Topic 2 contains words like Afghanistan, Iraq, border, and terrorist. 
+
+```{r plot of difference between topics 1 to 3}
+sou_beta_plot2 <- bind_rows(
+  sou_beta_wide |> 
+  select(term, log_ratio_3_to_1) |> 
+  slice_max(log_ratio_3_to_1, n = 10),
+   sou_beta_wide |> 
+  select(term, log_ratio_3_to_1) |> 
+  slice_min(log_ratio_3_to_1, n = 10)
+) |> arrange(desc(log_ratio_3_to_1))
+  
+ggplot(sou_beta_plot2, aes(log_ratio_3_to_1, reorder(term, log_ratio_3_to_1), fill = log_ratio_3_to_1)) +
+  geom_col()
+```
+Again the log ratio of Topic 3 to Topic 1, indicates the proposed topics are correct. Topic 1 includes words such as expenditures and compassion, whilc Topic 3 features words such as fiscal, gun, vote, and financial.
+
+
+```{r plot of difference between topics 2 to 3}
+sou_beta_plot3 <- bind_rows(
+  sou_beta_wide |> 
+  select(term, log_ratio_3_to_2) |> 
+  slice_max(log_ratio_3_to_2, n = 10),
+   sou_beta_wide |> 
+  select(term, log_ratio_3_to_2) |> 
+  slice_min(log_ratio_3_to_2, n = 10)
+) |> arrange(desc(log_ratio_3_to_2))
+  
+ggplot(sou_beta_plot3, aes(log_ratio_3_to_2, reorder(term, log_ratio_3_to_2), fill = log_ratio_3_to_2)) +
+  geom_col()
+```
+Finally, the log ratio of Topic 3 to Topic 2, indicates the same thing. As noted earlier Topic 2 includes the words terrorist, Iraq, and Afghanistan. All international security and affairs related issues. While Topic 3 contains words related to domestic safety and financial affairs such as fiscal, farm, vote, and expenditures.
+
+# Conclusion
+
+While the State of the Union is the most important single political speech in the US, this paper was unable to indicate a meaningful effect on both the Presidential approval rating and the composition shift in Congress in the election the following fall.
+
+When the speeches were analyzed with sentiment analysis there appeared to be no statistically evident relationship between the average sentiment and either the shifts in Congressional makeup or the changes in Presidential approval from before and after the speech.
